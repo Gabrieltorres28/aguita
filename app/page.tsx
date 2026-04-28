@@ -87,7 +87,7 @@ export default function Page() {
               <Droplets className="size-5" />
             </div>
             <div className="flex flex-col leading-tight">
-              <span className="text-base font-bold">AguaFácil</span>
+              <span className="text-base font-bold">Agüita</span>
               <span className="text-[11px] text-muted-foreground">
                 Sistema de reparto
               </span>
