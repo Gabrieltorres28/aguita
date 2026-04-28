@@ -19,6 +19,7 @@ import {
   Settings,
   Droplets,
   Package,
+  LogOut,
 } from "lucide-react"
 import type { TipoMovimiento } from "@/lib/types"
 
@@ -45,6 +46,9 @@ export default function Page() {
   const {
     db,
     hydrated,
+    loading,
+    error,
+    logout,
     setPrecioBidon,
     agregarProducto,
     editarProducto,
@@ -54,7 +58,6 @@ export default function Page() {
     eliminarCliente,
     registrarMovimiento,
     eliminarMovimiento,
-    resetDemo,
     limpiarTodo,
   } = useDB()
 
@@ -78,7 +81,7 @@ export default function Page() {
     setTab("registrar")
   }
 
-  if (!hydrated) {
+  if (!hydrated || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-2 text-muted-foreground">
@@ -106,8 +109,17 @@ export default function Page() {
             </div>
           </div>
           <span className="hidden rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground sm:inline lg:hidden">
-            Demo · datos locales
+            Supabase
           </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="hidden h-9 gap-2 lg:flex"
+            onClick={logout}
+          >
+            <LogOut className="size-4" />
+            Salir
+          </Button>
         </div>
 
         {/* Desktop nav */}
@@ -134,6 +146,16 @@ export default function Page() {
       {/* Content */}
       <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-4 md:py-6 lg:ml-64 lg:px-6 xl:px-8">
         {tab === "dashboard" && <Dashboard db={db} />}
+        {error && (
+          <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+        {db.clientes.length === 0 && db.productos.length === 0 && db.movimientos.length === 0 && tab === "dashboard" && (
+          <div className="mb-4 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+            No hay datos cargados todavía. Creá productos y clientes para empezar.
+          </div>
+        )}
         {tab === "clientes" && (
           <ClientesView
             clientes={db.clientes}
@@ -184,7 +206,6 @@ export default function Page() {
           <Ajustes
             precioBidon={db.precioBidon}
             onActualizarPrecio={setPrecioBidon}
-            onResetDemo={resetDemo}
             onLimpiarTodo={limpiarTodo}
           />
         )}
@@ -195,7 +216,7 @@ export default function Page() {
         className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card md:hidden"
         aria-label="Navegación principal"
       >
-        <div className="mx-auto grid max-w-5xl grid-cols-7">
+        <div className="mx-auto grid max-w-5xl grid-cols-8">
           {tabs.map((t) => {
             const Icon = t.icon
             const active = tab === t.id
@@ -215,6 +236,13 @@ export default function Page() {
               </button>
             )
           })}
+          <button
+            onClick={logout}
+            className="flex flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <LogOut className="size-5" />
+            <span className="leading-none">Salir</span>
+          </button>
         </div>
       </nav>
     </div>

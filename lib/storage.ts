@@ -1,9 +1,10 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import type { Session } from "@supabase/supabase-js"
+import { supabase, supabaseConfigError } from "./supabaseClient"
 import type { Cliente, DB, Movimiento, MovimientoProducto, Producto, TipoMovimiento } from "./types"
-
-const STORAGE_KEY = "aguafacil_db_v1"
 
 const defaultDB: DB = {
   clientes: [],
@@ -12,137 +13,283 @@ const defaultDB: DB = {
   precioBidon: 2500,
 }
 
-const defaultProductos = (precioBidon = 2500): Producto[] => [
-  {
-    id: "prod-bidon-20",
-    nombre: "Bidón de 20 litros",
-    categoria: "Bidones",
-    stockActual: 0,
-    precioVenta: precioBidon,
-    activo: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  },
-]
+type ClientRow = {
+  id: string
+  name: string
+  phone: string | null
+  address: string | null
+  notes: string | null
+  balance: number | string | null
+  containers_12_on_loan: number | null
+  containers_20_on_loan: number | null
+  is_active: boolean | null
+  created_at: string | null
+}
 
-function readDB(): DB {
-  if (typeof window === "undefined") return defaultDB
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return defaultDB
-    const parsed = JSON.parse(raw) as DB
-    const precioBidon = parsed.precioBidon ?? 2500
-    const productos = (parsed.productos?.length ? parsed.productos : defaultProductos(precioBidon)).map(
-      (p) => ({
-        ...p,
-        categoria: p.categoria || "General",
-        stockActual: Number(p.stockActual) || 0,
-        precioVenta: Number(p.precioVenta) || 0,
-        activo: p.activo ?? true,
-        createdAt: p.createdAt ?? new Date().toISOString(),
-        updatedAt: p.updatedAt ?? new Date().toISOString(),
-      }),
-    )
-    const fallbackProducto = productos[0]
-    return {
-      clientes: (parsed.clientes ?? []).map((cliente) => ({
-        ...cliente,
-        observaciones: cliente.observaciones ?? "",
-        activo: cliente.activo ?? true,
-        createdAt: cliente.createdAt ?? new Date().toISOString(),
-        updatedAt: cliente.updatedAt ?? cliente.createdAt ?? new Date().toISOString(),
-      })),
-      movimientos: (parsed.movimientos ?? []).map((m) => migrateMovimiento(m, fallbackProducto)),
-      productos,
-      precioBidon,
-    }
-  } catch {
-    return defaultDB
+type ProductRow = {
+  id: string
+  name: string
+  type: string
+  size_liters: number | null
+  price: number | string | null
+  stock: number | null
+  is_active: boolean | null
+  created_at: string | null
+}
+
+type MovementItemRow = {
+  id: string
+  movement_id: string
+  product_id: string | null
+  quantity: number
+  unit_price: number | string | null
+  line_total: number | string | null
+  container_type: string | null
+  containers_delivered: number | null
+  containers_returned: number | null
+  products?: ProductRow | null
+}
+
+type MovementRow = {
+  id: string
+  client_id: string
+  movement_type: TipoMovimiento
+  movement_date: string
+  total_amount: number | string | null
+  paid_amount: number | string | null
+  payment_method: string | null
+  balance_after: number | string | null
+  notes: string | null
+  created_at: string | null
+  movement_items?: MovementItemRow[]
+}
+
+function numberValue(value: number | string | null | undefined) {
+  return Number(value ?? 0) || 0
+}
+
+function mapClient(row: ClientRow): Cliente {
+  const createdAt = row.created_at ?? new Date().toISOString()
+  return {
+    id: row.id,
+    nombre: row.name,
+    telefono: row.phone ?? "",
+    direccion: row.address ?? "",
+    observaciones: row.notes ?? "",
+    activo: row.is_active ?? true,
+    saldo: numberValue(row.balance),
+    envasesComodato: (row.containers_12_on_loan ?? 0) + (row.containers_20_on_loan ?? 0),
+    createdAt,
+    updatedAt: createdAt,
   }
 }
 
-function migrateMovimiento(m: Movimiento, fallbackProducto?: Producto): Movimiento {
-  const fechaMovimiento = m.fechaVenta ?? m.fecha ?? new Date().toISOString()
-  const productos =
-    m.productos ??
-    (m.tipo === "entrega" && m.bidonesEntregados > 0 && fallbackProducto
-      ? [
-          {
-            productoId: fallbackProducto.id,
-            nombre: fallbackProducto.nombre,
-            categoria: fallbackProducto.categoria,
-            cantidad: m.bidonesEntregados,
-            precioUnitario: m.precioUnitario,
-            subtotal: m.total,
-          },
-        ]
-      : [])
+function mapProduct(row: ProductRow): Producto {
+  const createdAt = row.created_at ?? new Date().toISOString()
+  return {
+    id: row.id,
+    nombre: row.name,
+    categoria: row.type || "General",
+    stockActual: row.stock ?? 0,
+    precioVenta: numberValue(row.price),
+    activo: row.is_active ?? true,
+    createdAt,
+    updatedAt: createdAt,
+  }
+}
+
+function mapMovement(row: MovementRow): Movimiento {
+  const productos: MovimientoProducto[] = (row.movement_items ?? [])
+    .filter((item) => item.product_id && item.quantity > 0)
+    .map((item) => ({
+      productoId: item.product_id as string,
+      nombre: item.products?.name ?? "Producto eliminado",
+      categoria: item.products?.type ?? "General",
+      cantidad: item.quantity,
+      precioUnitario: numberValue(item.unit_price),
+      subtotal: numberValue(item.line_total),
+    }))
+
+  const entregados = (row.movement_items ?? []).reduce(
+    (sum, item) => sum + (item.containers_delivered ?? 0),
+    0,
+  )
+  const retirados = (row.movement_items ?? []).reduce(
+    (sum, item) => sum + (item.containers_returned ?? 0),
+    0,
+  )
+  const total = numberValue(row.total_amount)
+  const pagoRecibido = numberValue(row.paid_amount)
+  const fecha = `${row.movement_date}T12:00:00.000Z`
+  const fechaCarga = row.created_at ?? fecha
 
   return {
-    ...m,
-    fecha: m.fecha ?? fechaMovimiento,
-    fechaVenta: fechaMovimiento,
-    fechaCobro: m.fechaCobro,
-    fechaCarga: m.fechaCarga ?? m.fecha ?? fechaMovimiento,
+    id: row.id,
+    clienteId: row.client_id,
+    fecha,
+    fechaVenta: fecha,
+    fechaCobro: pagoRecibido > 0 ? fecha : undefined,
+    fechaCarga,
+    tipo: row.movement_type,
     estado:
-      m.estado ??
-      (m.tipo === "entrega"
-        ? m.pagoRecibido >= m.total
+      row.movement_type === "entrega"
+        ? pagoRecibido >= total
           ? "pagada"
           : "pendiente"
-        : undefined),
+        : undefined,
+    bidonesEntregados: entregados,
+    envasesRetirados: retirados,
+    precioUnitario: productos.length === 1 ? productos[0].precioUnitario : 0,
     productos,
+    total,
+    pagoRecibido,
+    saldoResultante: numberValue(row.balance_after),
+    observacion: row.notes ?? "",
   }
 }
 
-function writeDB(db: DB) {
-  if (typeof window === "undefined") return
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+function getSupabaseMessage(error: unknown) {
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message: unknown }).message)
+  }
+  return "Ocurrió un error inesperado."
 }
 
-function uid() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+function toMovementDate(value?: string) {
+  return (value ? new Date(value) : new Date()).toISOString().slice(0, 10)
+}
+
+function getContainerBucket(product?: ProductRow | Producto | null) {
+  if (!product) return "20"
+  const size =
+    "size_liters" in product ? product.size_liters : product.nombre.match(/\d+/)?.[0]
+  return Number(size) === 12 ? "12" : "20"
+}
+
+function isContainerProduct(product: Producto) {
+  const value = `${product.nombre} ${product.categoria}`.toLowerCase()
+  return value.includes("bidon") || value.includes("bidón") || value.includes("envase")
 }
 
 export function useDB() {
+  const router = useRouter()
   const [db, setDb] = useState<DB>(defaultDB)
   const [hydrated, setHydrated] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [session, setSession] = useState<Session | null>(null)
+
+  const loadDB = useCallback(async () => {
+    setLoading(true)
+    setError("")
+    try {
+      if (supabaseConfigError) throw new Error(supabaseConfigError)
+      const [clientsResult, productsResult, movementsResult] = await Promise.all([
+        supabase.from("clients").select("*").order("created_at", { ascending: false }),
+        supabase.from("products").select("*").order("created_at", { ascending: false }),
+        supabase
+          .from("movements")
+          .select("*, movement_items(*, products(*))")
+          .order("created_at", { ascending: false }),
+      ])
+
+      if (clientsResult.error) throw clientsResult.error
+      if (productsResult.error) throw productsResult.error
+      if (movementsResult.error) throw movementsResult.error
+
+      const productos = ((productsResult.data ?? []) as ProductRow[]).map(mapProduct)
+      const precioBidon =
+        productos.find((producto) => producto.nombre.toLowerCase().includes("20"))?.precioVenta ??
+        productos.find((producto) => producto.categoria.toLowerCase().includes("bid"))?.precioVenta ??
+        2500
+
+      setDb({
+        clientes: ((clientsResult.data ?? []) as ClientRow[]).map(mapClient),
+        productos,
+        movimientos: ((movementsResult.data ?? []) as MovementRow[]).map(mapMovement),
+        precioBidon,
+      })
+    } catch (err) {
+      setError(getSupabaseMessage(err))
+    } finally {
+      setLoading(false)
+      setHydrated(true)
+    }
+  }, [])
 
   useEffect(() => {
-    setDb(readDB())
-    setHydrated(true)
-  }, [])
+    let mounted = true
 
-  const persist = useCallback((updater: (prev: DB) => DB) => {
-    setDb((prev) => {
-      const next = updater(prev)
-      writeDB(next)
-      return next
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return
+      setSession(data.session)
+      if (!data.session) {
+        router.replace("/login")
+        setHydrated(true)
+        setLoading(false)
+        return
+      }
+      loadDB()
     })
-  }, [])
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession)
+      if (!nextSession) router.replace("/login")
+    })
+
+    return () => {
+      mounted = false
+      listener.subscription.unsubscribe()
+    }
+  }, [loadDB, router])
+
+  const runMutation = useCallback(
+    async (action: () => Promise<void>) => {
+      setError("")
+      try {
+        await action()
+        await loadDB()
+      } catch (err) {
+        setError(getSupabaseMessage(err))
+      }
+    },
+    [loadDB],
+  )
 
   const setPrecioBidon = useCallback(
-    (precio: number) => persist((p) => ({ ...p, precioBidon: precio })),
-    [persist],
+    (precio: number) => {
+      void runMutation(async () => {
+        const bidon = db.productos.find(
+          (producto) =>
+            producto.nombre.toLowerCase().includes("bid") &&
+            producto.nombre.toLowerCase().includes("20"),
+        )
+        if (!bidon) return
+        const { error: updateError } = await supabase
+          .from("products")
+          .update({ price: Number(precio) || 0 })
+          .eq("id", bidon.id)
+        if (updateError) throw updateError
+      })
+    },
+    [db.productos, runMutation],
   )
 
   const agregarProducto = useCallback(
     (data: Pick<Producto, "nombre" | "categoria" | "stockActual" | "precioVenta">) => {
-      const ahora = new Date().toISOString()
-      const producto: Producto = {
-        id: uid(),
-        nombre: data.nombre.trim(),
-        categoria: data.categoria.trim() || "General",
-        stockActual: Number(data.stockActual) || 0,
-        precioVenta: Number(data.precioVenta) || 0,
-        activo: true,
-        createdAt: ahora,
-        updatedAt: ahora,
-      }
-      persist((p) => ({ ...p, productos: [producto, ...p.productos] }))
-      return producto
+      void runMutation(async () => {
+        const { error: insertError } = await supabase.from("products").insert({
+          name: data.nombre.trim(),
+          type: data.categoria.trim() || "General",
+          size_liters: Number(data.nombre.match(/\d+/)?.[0] ?? 0) || null,
+          price: Number(data.precioVenta) || 0,
+          stock: Number(data.stockActual) || 0,
+          is_active: true,
+        })
+        if (insertError) throw insertError
+      })
     },
-    [persist],
+    [runMutation],
   )
 
   const editarProducto = useCallback(
@@ -150,31 +297,22 @@ export function useDB() {
       id: string,
       data: Partial<Pick<Producto, "nombre" | "categoria" | "stockActual" | "precioVenta" | "activo">>,
     ) => {
-      persist((p) => ({
-        ...p,
-        productos: p.productos.map((producto) =>
-          producto.id === id
-            ? {
-                ...producto,
-                ...data,
-                nombre: data.nombre?.trim() ?? producto.nombre,
-                categoria: data.categoria?.trim() || producto.categoria,
-                stockActual:
-                  data.stockActual !== undefined
-                    ? Number(data.stockActual) || 0
-                    : producto.stockActual,
-                precioVenta:
-                  data.precioVenta !== undefined
-                    ? Number(data.precioVenta) || 0
-                    : producto.precioVenta,
-                activo: data.activo ?? producto.activo,
-                updatedAt: new Date().toISOString(),
-              }
-            : producto,
-        ),
-      }))
+      void runMutation(async () => {
+        const patch: Record<string, string | number | boolean | null> = {}
+        if (data.nombre !== undefined) {
+          patch.name = data.nombre.trim()
+          patch.size_liters = Number(data.nombre.match(/\d+/)?.[0] ?? 0) || null
+        }
+        if (data.categoria !== undefined) patch.type = data.categoria.trim() || "General"
+        if (data.stockActual !== undefined) patch.stock = Number(data.stockActual) || 0
+        if (data.precioVenta !== undefined) patch.price = Number(data.precioVenta) || 0
+        if (data.activo !== undefined) patch.is_active = data.activo
+
+        const { error: updateError } = await supabase.from("products").update(patch).eq("id", id)
+        if (updateError) throw updateError
+      })
     },
-    [persist],
+    [runMutation],
   )
 
   const desactivarProducto = useCallback(
@@ -186,23 +324,17 @@ export function useDB() {
 
   const agregarCliente = useCallback(
     (data: Pick<Cliente, "nombre" | "telefono" | "direccion" | "observaciones">) => {
-      const ahora = new Date().toISOString()
-      const cliente: Cliente = {
-        id: uid(),
-        nombre: data.nombre.trim(),
-        telefono: data.telefono.trim(),
-        direccion: data.direccion.trim(),
-        observaciones: data.observaciones.trim(),
-        activo: true,
-        saldo: 0,
-        envasesComodato: 0,
-        createdAt: ahora,
-        updatedAt: ahora,
-      }
-      persist((p) => ({ ...p, clientes: [cliente, ...p.clientes] }))
-      return cliente
+      void runMutation(async () => {
+        const { error: insertError } = await supabase.from("clients").insert({
+          name: data.nombre.trim(),
+          phone: data.telefono.trim(),
+          address: data.direccion.trim(),
+          notes: data.observaciones.trim(),
+        })
+        if (insertError) throw insertError
+      })
     },
-    [persist],
+    [runMutation],
   )
 
   const editarCliente = useCallback(
@@ -210,37 +342,35 @@ export function useDB() {
       id: string,
       data: Partial<Pick<Cliente, "nombre" | "telefono" | "direccion" | "observaciones" | "activo">>,
     ) => {
-      persist((p) => ({
-        ...p,
-        clientes: p.clientes.map((c) =>
-          c.id === id
-            ? {
-                ...c,
-                ...data,
-                nombre: data.nombre?.trim() ?? c.nombre,
-                telefono: data.telefono?.trim() ?? c.telefono,
-                direccion: data.direccion?.trim() ?? c.direccion,
-                observaciones: data.observaciones?.trim() ?? c.observaciones,
-                activo: data.activo ?? c.activo,
-                updatedAt: new Date().toISOString(),
-              }
-            : c,
-        ),
-      }))
+      void runMutation(async () => {
+        const patch: Record<string, string | boolean> = {}
+        if (data.nombre !== undefined) patch.name = data.nombre.trim()
+        if (data.telefono !== undefined) patch.phone = data.telefono.trim()
+        if (data.direccion !== undefined) patch.address = data.direccion.trim()
+        if (data.observaciones !== undefined) patch.notes = data.observaciones.trim()
+        if (data.activo !== undefined) patch.is_active = data.activo
+
+        const { error: updateError } = await supabase.from("clients").update(patch).eq("id", id)
+        if (updateError) throw updateError
+      })
     },
-    [persist],
+    [runMutation],
   )
 
   const eliminarCliente = useCallback(
     (id: string) => {
-      persist((p) => ({
-        ...p,
-        clientes: p.clientes.map((c) =>
-          c.id === id ? { ...c, activo: false, updatedAt: new Date().toISOString() } : c,
-        ),
-      }))
+      void runMutation(async () => {
+        const { error: movementsError } = await supabase
+          .from("movements")
+          .delete()
+          .eq("client_id", id)
+        if (movementsError) throw movementsError
+
+        const { error: clientError } = await supabase.from("clients").delete().eq("id", id)
+        if (clientError) throw clientError
+      })
     },
-    [persist],
+    [runMutation],
   )
 
   const registrarMovimiento = useCallback(
@@ -257,406 +387,294 @@ export function useDB() {
       fechaCobro?: string
       fecha?: string
     }) => {
-      persist((p) => {
-        const cliente = p.clientes.find((c) => c.id === input.clienteId)
-        if (!cliente) return p
+      void runMutation(async () => {
+        const cliente = db.clientes.find((c) => c.id === input.clienteId)
+        if (!cliente) throw new Error("Cliente no encontrado.")
 
-        const productos: MovimientoProducto[] =
+        const lineas =
           input.tipo === "entrega"
             ? (input.productos ?? [])
                 .map((item) => {
-                  const producto = p.productos.find((prod) => prod.id === item.productoId)
+                  const producto = db.productos.find((p) => p.id === item.productoId)
                   if (!producto) return null
                   const cantidad = Number(item.cantidad) || 0
                   const precioUnitario = Number(item.precioUnitario) || 0
                   return {
-                    productoId: producto.id,
-                    nombre: producto.nombre,
-                    categoria: producto.categoria,
+                    producto,
                     cantidad,
                     precioUnitario,
                     subtotal: cantidad * precioUnitario,
                   }
                 })
-                .filter((item): item is MovimientoProducto => Boolean(item && item.cantidad > 0))
+                .filter((item): item is NonNullable<typeof item> => Boolean(item && item.cantidad > 0))
             : []
 
         const total =
-          productos.length > 0
-            ? productos.reduce((sum, item) => sum + item.subtotal, 0)
+          lineas.length > 0
+            ? lineas.reduce((sum, item) => sum + item.subtotal, 0)
             : input.bidonesEntregados * input.precioUnitario
-        // saldo positivo = a favor del cliente, negativo = deuda
-        // entrega: resta total, suma pago
-        // pago: solo suma pago
-        // retiro: no afecta dinero (solo envases)
-        // ajuste: usa pagoRecibido como ajuste de saldo (+ a favor / - deuda)
         let deltaSaldo = 0
-        if (input.tipo === "entrega") {
-          deltaSaldo = input.pagoRecibido - total
-        } else if (input.tipo === "pago") {
-          deltaSaldo = input.pagoRecibido
-        } else if (input.tipo === "ajuste") {
-          deltaSaldo = input.pagoRecibido
-        }
+        if (input.tipo === "entrega") deltaSaldo = input.pagoRecibido - total
+        else if (input.tipo === "pago") deltaSaldo = input.pagoRecibido
+        else if (input.tipo === "ajuste") deltaSaldo = input.pagoRecibido
 
-        const deltaComodato = input.bidonesEntregados - input.envasesRetirados
         const nuevoSaldo = cliente.saldo + deltaSaldo
-        const nuevoComodato = cliente.envasesComodato + deltaComodato
+        const movementItems: {
+          product_id: string | null
+          quantity: number
+          unit_price: number
+          line_total: number
+          container_type: string
+          containers_delivered: number
+          containers_returned: number
+        }[] = lineas.map((item) => {
+          const isContainer = isContainerProduct(item.producto)
+          const containerType = getContainerBucket(item.producto)
+          return {
+            product_id: item.producto.id,
+            quantity: item.cantidad,
+            unit_price: item.precioUnitario,
+            line_total: item.subtotal,
+            container_type: containerType,
+            containers_delivered: isContainer ? item.cantidad : 0,
+            containers_returned: 0,
+          }
+        })
 
-        const mov: Movimiento = {
-          id: uid(),
-          clienteId: input.clienteId,
-          fecha: input.fechaVenta ?? input.fecha ?? new Date().toISOString(),
-          fechaVenta: input.fechaVenta ?? input.fecha ?? new Date().toISOString(),
-          fechaCobro: input.fechaCobro || undefined,
-          fechaCarga: new Date().toISOString(),
-          tipo: input.tipo,
-          estado:
-            input.tipo === "entrega"
-              ? input.pagoRecibido >= total
-                ? "pagada"
-                : "pendiente"
-              : undefined,
-          bidonesEntregados: input.bidonesEntregados,
-          envasesRetirados: input.envasesRetirados,
-          precioUnitario:
-            productos.length === 1 ? productos[0].precioUnitario : input.precioUnitario,
-          productos,
-          total,
-          pagoRecibido: input.pagoRecibido,
-          saldoResultante: nuevoSaldo,
-          observacion: input.observacion,
+        if (input.envasesRetirados > 0) {
+          movementItems.push({
+            product_id: lineas[0]?.producto.id ?? null,
+            quantity: 0,
+            unit_price: 0,
+            line_total: 0,
+            container_type: lineas[0] ? getContainerBucket(lineas[0].producto) : "20",
+            containers_delivered: 0,
+            containers_returned: input.envasesRetirados,
+          })
         }
 
-        return {
-          ...p,
-          movimientos: [mov, ...p.movimientos],
-          productos: p.productos.map((producto) => {
-            const vendido = productos
-              .filter((item) => item.productoId === producto.id)
-              .reduce((sum, item) => sum + item.cantidad, 0)
-            return vendido > 0
-              ? { ...producto, stockActual: producto.stockActual - vendido, updatedAt: new Date().toISOString() }
-              : producto
+        const delta12 = movementItems
+          .filter((item) => item.container_type === "12")
+          .reduce((sum, item) => sum + item.containers_delivered - item.containers_returned, 0)
+        const delta20 = movementItems
+          .filter((item) => item.container_type !== "12")
+          .reduce((sum, item) => sum + item.containers_delivered - item.containers_returned, 0)
+
+        const { data: movement, error: movementError } = await supabase
+          .from("movements")
+          .insert({
+            client_id: input.clienteId,
+            movement_type: input.tipo,
+            movement_date: toMovementDate(input.fechaVenta ?? input.fecha),
+            total_amount: total,
+            paid_amount: input.tipo === "retiro" ? 0 : Number(input.pagoRecibido) || 0,
+            payment_method: input.tipo === "pago" ? "efectivo" : null,
+            balance_after: nuevoSaldo,
+            notes: input.observacion.trim(),
+          })
+          .select("id")
+          .single()
+        if (movementError) throw movementError
+
+        if (movementItems.length > 0) {
+          const { error: itemsError } = await supabase.from("movement_items").insert(
+            movementItems.map((item) => ({
+              ...item,
+              movement_id: movement.id,
+            })),
+          )
+          if (itemsError) throw itemsError
+        }
+
+        const stockDeltas = new Map<string, { producto: Producto; cantidad: number }>()
+        lineas.forEach((item) => {
+          const current = stockDeltas.get(item.producto.id)
+          stockDeltas.set(item.producto.id, {
+            producto: item.producto,
+            cantidad: (current?.cantidad ?? 0) + item.cantidad,
+          })
+        })
+
+        await Promise.all(
+          Array.from(stockDeltas.values()).map(async (item) => {
+            const { error: productError } = await supabase
+              .from("products")
+              .update({ stock: item.producto.stockActual - item.cantidad })
+              .eq("id", item.producto.id)
+            if (productError) throw productError
           }),
-          clientes: p.clientes.map((c) =>
-            c.id === cliente.id
-              ? { ...c, saldo: nuevoSaldo, envasesComodato: nuevoComodato }
-              : c,
-          ),
-        }
+        )
+
+        const { data: currentClient, error: currentClientError } = await supabase
+          .from("clients")
+          .select("containers_12_on_loan, containers_20_on_loan")
+          .eq("id", cliente.id)
+          .single()
+        if (currentClientError) throw currentClientError
+
+        const { error: clientError } = await supabase
+          .from("clients")
+          .update({
+            balance: nuevoSaldo,
+            containers_12_on_loan: Math.max(
+              0,
+              Number(currentClient.containers_12_on_loan ?? 0) + delta12,
+            ),
+            containers_20_on_loan: Math.max(
+              0,
+              Number(currentClient.containers_20_on_loan ?? 0) + delta20,
+            ),
+          })
+          .eq("id", cliente.id)
+        if (clientError) throw clientError
       })
     },
-    [persist],
+    [db.clientes, db.productos, runMutation],
   )
 
   const eliminarMovimiento = useCallback(
     (movId: string) => {
-      persist((p) => {
-        const mov = p.movimientos.find((m) => m.id === movId)
-        if (!mov) return p
-        const cliente = p.clientes.find((c) => c.id === mov.clienteId)
-        if (!cliente) {
-          return { ...p, movimientos: p.movimientos.filter((m) => m.id !== movId) }
-        }
+      void runMutation(async () => {
+        const mov = db.movimientos.find((m) => m.id === movId)
+        const cliente = mov ? db.clientes.find((c) => c.id === mov.clienteId) : null
+        if (!mov || !cliente) return
 
         let deltaSaldo = 0
-        if (mov.tipo === "entrega") {
-          deltaSaldo = mov.pagoRecibido - mov.total
-        } else if (mov.tipo === "pago") {
-          deltaSaldo = mov.pagoRecibido
-        } else if (mov.tipo === "ajuste") {
-          deltaSaldo = mov.pagoRecibido
-        }
-        const deltaComodato = mov.bidonesEntregados - mov.envasesRetirados
+        if (mov.tipo === "entrega") deltaSaldo = mov.pagoRecibido - mov.total
+        else if (mov.tipo === "pago") deltaSaldo = mov.pagoRecibido
+        else if (mov.tipo === "ajuste") deltaSaldo = mov.pagoRecibido
 
-        return {
-          ...p,
-          movimientos: p.movimientos.filter((m) => m.id !== movId),
-          productos: p.productos.map((producto) => {
-            const devuelto = (mov.productos ?? [])
-              .filter((item) => item.productoId === producto.id)
-              .reduce((sum, item) => sum + item.cantidad, 0)
-            return devuelto > 0
-              ? { ...producto, stockActual: producto.stockActual + devuelto, updatedAt: new Date().toISOString() }
-              : producto
+        const { data: itemRows, error: itemsReadError } = await supabase
+          .from("movement_items")
+          .select("container_type, containers_delivered, containers_returned")
+          .eq("movement_id", movId)
+        if (itemsReadError) throw itemsReadError
+
+        const reverseDelta12 = ((itemRows ?? []) as MovementItemRow[])
+          .filter((item) => item.container_type === "12")
+          .reduce(
+            (sum, item) => sum - (item.containers_delivered ?? 0) + (item.containers_returned ?? 0),
+            0,
+          )
+        const reverseDelta20 = ((itemRows ?? []) as MovementItemRow[])
+          .filter((item) => item.container_type !== "12")
+          .reduce(
+            (sum, item) => sum - (item.containers_delivered ?? 0) + (item.containers_returned ?? 0),
+            0,
+          )
+
+        const stockDeltas = new Map<string, number>()
+        mov.productos.forEach((item) => {
+          stockDeltas.set(item.productoId, (stockDeltas.get(item.productoId) ?? 0) + item.cantidad)
+        })
+
+        await Promise.all(
+          Array.from(stockDeltas.entries()).map(async ([productoId, cantidad]) => {
+            const producto = db.productos.find((p) => p.id === productoId)
+            if (!producto) return
+            const { error: productError } = await supabase
+              .from("products")
+              .update({ stock: producto.stockActual + cantidad })
+              .eq("id", producto.id)
+            if (productError) throw productError
           }),
-          clientes: p.clientes.map((c) =>
-            c.id === cliente.id
-              ? {
-                  ...c,
-                  saldo: c.saldo - deltaSaldo,
-                  envasesComodato: c.envasesComodato - deltaComodato,
-                }
-              : c,
-          ),
-        }
+        )
+
+        const { data: currentClient, error: currentClientError } = await supabase
+          .from("clients")
+          .select("containers_12_on_loan, containers_20_on_loan")
+          .eq("id", cliente.id)
+          .single()
+        if (currentClientError) throw currentClientError
+
+        const { error: clientError } = await supabase
+          .from("clients")
+          .update({
+            balance: cliente.saldo - deltaSaldo,
+            containers_20_on_loan: Math.max(
+              0,
+              Number(currentClient.containers_20_on_loan ?? 0) + reverseDelta20,
+            ),
+            containers_12_on_loan: Math.max(
+              0,
+              Number(currentClient.containers_12_on_loan ?? 0) + reverseDelta12,
+            ),
+          })
+          .eq("id", cliente.id)
+        if (clientError) throw clientError
+
+        const { error: deleteError } = await supabase.from("movements").delete().eq("id", movId)
+        if (deleteError) throw deleteError
       })
     },
-    [persist],
+    [db.clientes, db.movimientos, db.productos, runMutation],
   )
 
-  const resetDemo = useCallback(() => {
-    const ahora = new Date()
-    const fecha = (offsetDays: number) => {
-      const d = new Date(ahora)
-      d.setDate(d.getDate() - offsetDays)
-      return d.toISOString()
-    }
-
-    const c1: Cliente = {
-      id: uid(),
-      nombre: "María González",
-      telefono: "11 5555-1234",
-      direccion: "Av. Siempre Viva 123",
-      observaciones: "Entrega por la mañana.",
-      activo: true,
-      saldo: 0,
-      envasesComodato: 0,
-      createdAt: fecha(20),
-      updatedAt: fecha(1),
-    }
-    const c2: Cliente = {
-      id: uid(),
-      nombre: "Restaurante La Esquina",
-      telefono: "11 4422-9988",
-      direccion: "Rivadavia 4500",
-      observaciones: "Cliente comercial.",
-      activo: true,
-      saldo: 0,
-      envasesComodato: 0,
-      createdAt: fecha(15),
-      updatedAt: fecha(2),
-    }
-    const c3: Cliente = {
-      id: uid(),
-      nombre: "Carlos Pérez",
-      telefono: "11 3344-5566",
-      direccion: "Belgrano 870",
-      observaciones: "",
-      activo: true,
-      saldo: 0,
-      envasesComodato: 0,
-      createdAt: fecha(10),
-      updatedAt: fecha(1),
-    }
-
-    const precio = 2500
-    const ahoraIso = ahora.toISOString()
-    const producto20: Producto = {
-      id: uid(),
-      nombre: "Bidón de 20 litros",
-      categoria: "Bidones",
-      stockActual: 80,
-      precioVenta: precio,
-      activo: true,
-      createdAt: fecha(20),
-      updatedAt: ahoraIso,
-    }
-    const producto12: Producto = {
-      id: uid(),
-      nombre: "Bidón de 12 litros",
-      categoria: "Bidones",
-      stockActual: 35,
-      precioVenta: 1900,
-      activo: true,
-      createdAt: fecha(20),
-      updatedAt: ahoraIso,
-    }
-    const dispenser: Producto = {
-      id: uid(),
-      nombre: "Dispenser",
-      categoria: "Accesorios",
-      stockActual: 6,
-      precioVenta: 35000,
-      activo: true,
-      createdAt: fecha(20),
-      updatedAt: ahoraIso,
-    }
-    const movs: Movimiento[] = []
-    const clientes = [c1, c2, c3]
-    const productos = [producto20, producto12, dispenser]
-
-    function addMov(
-      cliente: Cliente,
-      partial: Omit<Movimiento, "id" | "saldoResultante" | "clienteId" | "total" | "fechaCarga">,
-    ) {
-      const total =
-        partial.productos.length > 0
-          ? partial.productos.reduce((sum, item) => sum + item.subtotal, 0)
-          : partial.bidonesEntregados * partial.precioUnitario
-      let delta = 0
-      if (partial.tipo === "entrega") delta = partial.pagoRecibido - total
-      else if (partial.tipo === "pago") delta = partial.pagoRecibido
-      else if (partial.tipo === "ajuste") delta = partial.pagoRecibido
-      cliente.saldo += delta
-      cliente.envasesComodato += partial.bidonesEntregados - partial.envasesRetirados
-      movs.push({
-        id: uid(),
-        clienteId: cliente.id,
-        total,
-        fechaCarga: partial.fecha,
-        saldoResultante: cliente.saldo,
-        ...partial,
-      })
-      partial.productos.forEach((item) => {
-        const producto = productos.find((p) => p.id === item.productoId)
-        if (producto) producto.stockActual -= item.cantidad
-      })
-    }
-
-    addMov(c1, {
-      fecha: fecha(8),
-      fechaVenta: fecha(8),
-      fechaCobro: fecha(8),
-      tipo: "entrega",
-      estado: "pagada",
-      bidonesEntregados: 2,
-      envasesRetirados: 0,
-      precioUnitario: precio,
-      productos: [
-        {
-          productoId: producto20.id,
-          nombre: producto20.nombre,
-          categoria: producto20.categoria,
-          cantidad: 2,
-          precioUnitario: precio,
-          subtotal: 2 * precio,
-        },
-      ],
-      pagoRecibido: 5000,
-      observacion: "Primera entrega",
-    })
-    addMov(c1, {
-      fecha: fecha(3),
-      fechaVenta: fecha(3),
-      tipo: "entrega",
-      estado: "pendiente",
-      bidonesEntregados: 2,
-      envasesRetirados: 2,
-      precioUnitario: precio,
-      productos: [
-        {
-          productoId: producto20.id,
-          nombre: producto20.nombre,
-          categoria: producto20.categoria,
-          cantidad: 2,
-          precioUnitario: precio,
-          subtotal: 2 * precio,
-        },
-      ],
-      pagoRecibido: 3000,
-      observacion: "Pago parcial",
-    })
-
-    addMov(c2, {
-      fecha: fecha(7),
-      fechaVenta: fecha(7),
-      tipo: "entrega",
-      estado: "pendiente",
-      bidonesEntregados: 6,
-      envasesRetirados: 0,
-      precioUnitario: precio,
-      productos: [
-        {
-          productoId: producto20.id,
-          nombre: producto20.nombre,
-          categoria: producto20.categoria,
-          cantidad: 5,
-          precioUnitario: precio,
-          subtotal: 5 * precio,
-        },
-        {
-          productoId: producto12.id,
-          nombre: producto12.nombre,
-          categoria: producto12.categoria,
-          cantidad: 1,
-          precioUnitario: producto12.precioVenta,
-          subtotal: producto12.precioVenta,
-        },
-      ],
-      pagoRecibido: 0,
-      observacion: "Pedido grande, paga después",
-    })
-    addMov(c2, {
-      fecha: fecha(2),
-      fechaVenta: fecha(2),
-      fechaCobro: fecha(2),
-      tipo: "pago",
-      estado: undefined,
-      bidonesEntregados: 0,
-      envasesRetirados: 0,
-      precioUnitario: 0,
-      productos: [],
-      pagoRecibido: 10000,
-      observacion: "Abono parcial",
-    })
-
-    addMov(c3, {
-      fecha: fecha(5),
-      fechaVenta: fecha(5),
-      fechaCobro: fecha(5),
-      tipo: "entrega",
-      estado: "pagada",
-      bidonesEntregados: 3,
-      envasesRetirados: 0,
-      precioUnitario: precio,
-      productos: [
-        {
-          productoId: producto20.id,
-          nombre: producto20.nombre,
-          categoria: producto20.categoria,
-          cantidad: 3,
-          precioUnitario: precio,
-          subtotal: 3 * precio,
-        },
-      ],
-      pagoRecibido: 7500,
-      observacion: "Pago al contado",
-    })
-    addMov(c3, {
-      fecha: fecha(1),
-      fechaVenta: fecha(1),
-      tipo: "retiro",
-      estado: undefined,
-      bidonesEntregados: 0,
-      envasesRetirados: 2,
-      precioUnitario: 0,
-      productos: [],
-      pagoRecibido: 0,
-      observacion: "Devolución de envases",
-    })
-
-    const next: DB = {
-      clientes,
-      movimientos: movs.sort((a, b) => (a.fecha < b.fecha ? 1 : -1)),
-      productos,
-      precioBidon: precio,
-    }
-    writeDB(next)
-    setDb(next)
-  }, [])
-
   const limpiarTodo = useCallback(() => {
-    writeDB(defaultDB)
-    setDb(defaultDB)
-  }, [])
+    void runMutation(async () => {
+      const { error: movementsError } = await supabase
+        .from("movements")
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000")
+      if (movementsError) throw movementsError
+      const { error: clientsError } = await supabase
+        .from("clients")
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000")
+      if (clientsError) throw clientsError
+      const { error: productsError } = await supabase
+        .from("products")
+        .delete()
+        .neq("id", "00000000-0000-0000-0000-000000000000")
+      if (productsError) throw productsError
+    })
+  }, [runMutation])
 
-  return {
-    db,
-    hydrated,
-    setPrecioBidon,
-    agregarProducto,
-    editarProducto,
-    desactivarProducto,
-    agregarCliente,
-    editarCliente,
-    eliminarCliente,
-    registrarMovimiento,
-    eliminarMovimiento,
-    resetDemo,
-    limpiarTodo,
-  }
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut()
+    router.replace("/login")
+  }, [router])
+
+  return useMemo(
+    () => ({
+      db,
+      hydrated,
+      loading,
+      error,
+      session,
+      logout,
+      refresh: loadDB,
+      setPrecioBidon,
+      agregarProducto,
+      editarProducto,
+      desactivarProducto,
+      agregarCliente,
+      editarCliente,
+      eliminarCliente,
+      registrarMovimiento,
+      eliminarMovimiento,
+      limpiarTodo,
+    }),
+    [
+      db,
+      hydrated,
+      loading,
+      error,
+      session,
+      logout,
+      loadDB,
+      setPrecioBidon,
+      agregarProducto,
+      editarProducto,
+      desactivarProducto,
+      agregarCliente,
+      editarCliente,
+      eliminarCliente,
+      registrarMovimiento,
+      eliminarMovimiento,
+      limpiarTodo,
+    ],
+  )
 }
 
 export function formatARS(n: number) {

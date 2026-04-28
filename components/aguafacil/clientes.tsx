@@ -229,7 +229,7 @@ export function ClientesView({
                             size="icon"
                             className="size-8 text-destructive hover:text-destructive"
                             onClick={() => setEliminandoId(c.id)}
-                            aria-label="Desactivar"
+                            aria-label="Borrar"
                           >
                             <Trash2 className="size-4" />
                           </Button>
@@ -266,7 +266,7 @@ export function ClientesView({
                       size="icon"
                       className="size-8 text-destructive hover:text-destructive"
                       onClick={() => setEliminandoId(c.id)}
-                      aria-label="Desactivar"
+                      aria-label="Borrar"
                     >
                       <Trash2 className="size-4" />
                     </Button>
@@ -415,10 +415,10 @@ export function ClientesView({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Desactivar cliente?</AlertDialogTitle>
+            <AlertDialogTitle>¿Borrar cliente?</AlertDialogTitle>
             <AlertDialogDescription>
-              El cliente dejará de aparecer como activo, pero se conservan sus
-              movimientos e historial.
+              Se eliminará el cliente junto con sus movimientos e historial.
+              Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -430,7 +430,7 @@ export function ClientesView({
               }}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              Desactivar
+              Borrar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

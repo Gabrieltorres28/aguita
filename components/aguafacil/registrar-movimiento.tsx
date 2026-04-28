@@ -104,7 +104,12 @@ export function RegistrarMovimiento({
       ? lineas.reduce((sum, linea) => sum + linea.cantidad * linea.precioUnitario, 0)
       : 0
   const unidadesEntregadas =
-    tipo === "entrega" ? lineas.reduce((sum, linea) => sum + linea.cantidad, 0) : 0
+    tipo === "entrega"
+      ? lineas.reduce((sum, linea) => {
+          const producto = productos.find((item) => item.id === linea.productoId)
+          return sum + (producto && esEnvase(producto) ? linea.cantidad : 0)
+        }, 0)
+      : 0
   const deudaActual = cliente && cliente.saldo < 0 ? -cliente.saldo : 0
 
   const reset = () => {
@@ -562,4 +567,9 @@ function toInputDate(date: Date) {
 
 function fromInputDate(value: string) {
   return new Date(`${value}T12:00:00`).toISOString()
+}
+
+function esEnvase(producto: Producto) {
+  const value = `${producto.nombre} ${producto.categoria}`.toLowerCase()
+  return value.includes("bidon") || value.includes("bidón") || value.includes("envase")
 }

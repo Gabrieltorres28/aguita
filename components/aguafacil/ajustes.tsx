@@ -16,19 +16,17 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { CheckCircle2, RotateCcw, Trash2 } from "lucide-react"
+import { CheckCircle2, Trash2 } from "lucide-react"
 
 type Props = {
   precioBidon: number
   onActualizarPrecio: (precio: number) => void
-  onResetDemo: () => void
   onLimpiarTodo: () => void
 }
 
 export function Ajustes({
   precioBidon,
   onActualizarPrecio,
-  onResetDemo,
   onLimpiarTodo,
 }: Props) {
   const [precio, setPrecio] = useState(precioBidon)
@@ -72,26 +70,6 @@ export function Ajustes({
               {okMsg}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Datos de prueba</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          <p className="text-sm text-muted-foreground">
-            Cargá clientes y movimientos de ejemplo para ver el sistema funcionando.
-          </p>
-          <Button
-            variant="secondary"
-            size="lg"
-            className="h-11 gap-2"
-            onClick={onResetDemo}
-          >
-            <RotateCcw className="size-4" />
-            Cargar datos de demostración
-          </Button>
         </CardContent>
       </Card>
 
