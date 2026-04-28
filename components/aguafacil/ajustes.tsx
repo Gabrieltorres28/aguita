@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { CheckCircle2, Download, Trash2 } from "lucide-react"
 import type { DB } from "@/lib/types"
+import { supabase } from "@/lib/supabaseClient"
 
 type Props = {
   db: DB
@@ -34,6 +35,12 @@ export function Ajustes({
 }: Props) {
   const [precio, setPrecio] = useState(precioBidon)
   const [okMsg, setOkMsg] = useState("")
+  const [currentPassword, setCurrentPassword] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [securityMsg, setSecurityMsg] = useState("")
+  const [securityError, setSecurityError] = useState("")
+  const [securityLoading, setSecurityLoading] = useState(false)
 
   useEffect(() => setPrecio(precioBidon), [precioBidon])
 
@@ -154,6 +161,53 @@ export function Ajustes({
     ])
   }
 
+  const cambiarPassword = async () => {
+    setSecurityMsg("")
+    setSecurityError("")
+
+    if (!currentPassword) {
+      setSecurityError("Ingresá tu contraseña actual.")
+      return
+    }
+    if (newPassword.length < 8) {
+      setSecurityError("La nueva contraseña debe tener al menos 8 caracteres.")
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setSecurityError("La nueva contraseña y la confirmación no coinciden.")
+      return
+    }
+
+    setSecurityLoading(true)
+    try {
+      const withCurrentPassword = await supabase.auth.updateUser({
+        password: newPassword,
+        currentPassword,
+      } as Parameters<typeof supabase.auth.updateUser>[0])
+
+      let updateError = withCurrentPassword.error
+      if (updateError && mentionsUnsupportedCurrentPassword(updateError.message)) {
+        const fallback = await supabase.auth.updateUser({ password: newPassword })
+        updateError = fallback.error
+      }
+
+      if (updateError) {
+        setSecurityError(updateError.message)
+        return
+      }
+
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+      setSecurityMsg("Contraseña actualizada correctamente.")
+      setTimeout(() => setSecurityMsg(""), 2500)
+    } catch (error) {
+      setSecurityError(error instanceof Error ? error.message : "No se pudo actualizar la contraseña.")
+    } finally {
+      setSecurityLoading(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <Card>
@@ -199,6 +253,68 @@ export function Ajustes({
             <Download className="size-4" />
             Exportar CSV
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Seguridad</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="current-password">Contraseña actual</Label>
+              <Input
+                id="current-password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                autoComplete="current-password"
+                className="h-11"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="new-password">Nueva contraseña</Label>
+              <Input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
+                className="h-11"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="confirm-password">Confirmar contraseña</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
+                className="h-11"
+              />
+            </div>
+          </div>
+          <Button
+            size="lg"
+            className="h-11 md:w-fit"
+            onClick={cambiarPassword}
+            disabled={securityLoading}
+          >
+            {securityLoading ? "Actualizando..." : "Cambiar contraseña"}
+          </Button>
+          {securityError && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {securityError}
+            </div>
+          )}
+          {securityMsg && (
+            <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+              <CheckCircle2 className="size-4" />
+              {securityMsg}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -265,4 +381,15 @@ function isContainerItem(nombre: string, categoria: string) {
 function getContainerType(nombre: string, categoria: string) {
   if (!isContainerItem(nombre, categoria)) return ""
   return Number(nombre.match(/\d+/)?.[0] ?? 20) === 12 ? "12" : "20"
+}
+
+function mentionsUnsupportedCurrentPassword(message: string) {
+  const value = message.toLowerCase()
+  return (
+    value.includes("currentpassword") ||
+    value.includes("current_password") ||
+    value.includes("unrecognized") ||
+    value.includes("unsupported") ||
+    value.includes("invalid keys")
+  )
 }
