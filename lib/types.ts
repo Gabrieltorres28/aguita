@@ -3,18 +3,46 @@ export type Cliente = {
   nombre: string
   telefono: string
   direccion: string
+  observaciones: string
+  activo: boolean
   saldo: number // positivo = a favor, negativo = deuda
   envasesComodato: number
   createdAt: string
+  updatedAt: string
 }
 
 export type TipoMovimiento = "entrega" | "retiro" | "pago" | "ajuste"
 
+export type Producto = {
+  id: string
+  nombre: string
+  categoria: string
+  stockActual: number
+  precioVenta: number
+  activo: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type MovimientoProducto = {
+  productoId: string
+  nombre: string
+  categoria: string
+  cantidad: number
+  precioUnitario: number
+  subtotal: number
+}
+
 export type Movimiento = {
   id: string
   clienteId: string
+  fechaVenta: string
+  fechaCobro?: string
+  fechaCarga: string
+  productos: MovimientoProducto[]
   fecha: string
   tipo: TipoMovimiento
+  estado?: "pagada" | "pendiente"
   bidonesEntregados: number
   envasesRetirados: number
   precioUnitario: number
@@ -27,5 +55,6 @@ export type Movimiento = {
 export type DB = {
   clientes: Cliente[]
   movimientos: Movimiento[]
+  productos: Producto[]
   precioBidon: number
 }

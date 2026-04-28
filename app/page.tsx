@@ -8,6 +8,7 @@ import { RegistrarMovimiento } from "@/components/aguafacil/registrar-movimiento
 import { CuentaCorriente } from "@/components/aguafacil/cuenta-corriente"
 import { Historial } from "@/components/aguafacil/historial"
 import { Ajustes } from "@/components/aguafacil/ajustes"
+import { StockView } from "@/components/aguafacil/stock"
 import { Button } from "@/components/ui/button"
 import {
   LayoutDashboard,
@@ -17,12 +18,15 @@ import {
   History,
   Settings,
   Droplets,
+  Package,
 } from "lucide-react"
+import type { TipoMovimiento } from "@/lib/types"
 
 type Tab =
   | "dashboard"
   | "clientes"
   | "registrar"
+  | "stock"
   | "cuenta"
   | "historial"
   | "ajustes"
@@ -31,6 +35,7 @@ const tabs: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: "dashboard", label: "Inicio", icon: LayoutDashboard },
   { id: "clientes", label: "Clientes", icon: Users },
   { id: "registrar", label: "Registrar", icon: PlusCircle },
+  { id: "stock", label: "Stock", icon: Package },
   { id: "cuenta", label: "Cuenta", icon: FileText },
   { id: "historial", label: "Historial", icon: History },
   { id: "ajustes", label: "Ajustes", icon: Settings },
@@ -41,6 +46,9 @@ export default function Page() {
     db,
     hydrated,
     setPrecioBidon,
+    agregarProducto,
+    editarProducto,
+    desactivarProducto,
     agregarCliente,
     editarCliente,
     eliminarCliente,
@@ -55,14 +63,18 @@ export default function Page() {
   const [clientePreseleccionado, setClientePreseleccionado] = useState<
     string | undefined
   >(undefined)
+  const [tipoPreseleccionado, setTipoPreseleccionado] = useState<TipoMovimiento | undefined>(
+    undefined,
+  )
 
   const irACuenta = (clienteId: string) => {
     setClienteCuentaId(clienteId)
     setTab("cuenta")
   }
 
-  const irARegistrar = (clienteId?: string) => {
+  const irARegistrar = (clienteId?: string, tipo?: TipoMovimiento) => {
     setClientePreseleccionado(clienteId)
+    setTipoPreseleccionado(tipo)
     setTab("registrar")
   }
 
@@ -78,10 +90,10 @@ export default function Page() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background pb-20 md:pb-0">
+    <div className="flex min-h-screen flex-col bg-background pb-20 md:pb-0 lg:flex-row">
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-border bg-card">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-3 px-4 py-3">
+      <header className="sticky top-0 z-30 border-b border-border bg-card lg:fixed lg:bottom-0 lg:left-0 lg:flex lg:w-64 lg:flex-col lg:border-b-0 lg:border-r">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-3 lg:mx-0 lg:max-w-none lg:px-5 lg:py-5">
           <div className="flex items-center gap-2">
             <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
               <Droplets className="size-5" />
@@ -93,13 +105,13 @@ export default function Page() {
               </span>
             </div>
           </div>
-          <span className="hidden rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground sm:inline">
+          <span className="hidden rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground sm:inline lg:hidden">
             Demo · datos locales
           </span>
         </div>
 
         {/* Desktop nav */}
-        <nav className="mx-auto hidden w-full max-w-5xl gap-1 overflow-x-auto px-4 pb-2 md:flex">
+        <nav className="mx-auto hidden w-full max-w-7xl gap-1 overflow-x-auto px-4 pb-2 md:flex lg:mx-0 lg:max-w-none lg:flex-1 lg:flex-col lg:overflow-visible lg:px-3 lg:pb-5">
           {tabs.map((t) => {
             const Icon = t.icon
             const active = tab === t.id
@@ -108,7 +120,7 @@ export default function Page() {
                 key={t.id}
                 variant={active ? "default" : "ghost"}
                 size="sm"
-                className="h-9 gap-1.5"
+                className="h-9 gap-1.5 lg:h-10 lg:justify-start"
                 onClick={() => setTab(t.id)}
               >
                 <Icon className="size-4" />
@@ -120,11 +132,12 @@ export default function Page() {
       </header>
 
       {/* Content */}
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-4">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-4 md:py-6 lg:ml-64 lg:px-6 xl:px-8">
         {tab === "dashboard" && <Dashboard db={db} />}
         {tab === "clientes" && (
           <ClientesView
             clientes={db.clientes}
+            movimientos={db.movimientos}
             onAgregar={agregarCliente}
             onEditar={editarCliente}
             onEliminar={eliminarCliente}
@@ -134,12 +147,23 @@ export default function Page() {
         {tab === "registrar" && (
           <RegistrarMovimiento
             clientes={db.clientes}
+            productos={db.productos}
             precioBidon={db.precioBidon}
             clienteSeleccionadoId={clientePreseleccionado}
+            tipoInicial={tipoPreseleccionado}
             onRegistrar={(input) => {
               registrarMovimiento(input)
               setClientePreseleccionado(undefined)
+              setTipoPreseleccionado(undefined)
             }}
+          />
+        )}
+        {tab === "stock" && (
+          <StockView
+            productos={db.productos}
+            onAgregar={agregarProducto}
+            onEditar={editarProducto}
+            onDesactivar={desactivarProducto}
           />
         )}
         {tab === "cuenta" && (
@@ -171,7 +195,7 @@ export default function Page() {
         className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-card md:hidden"
         aria-label="Navegación principal"
       >
-        <div className="mx-auto grid max-w-5xl grid-cols-6">
+        <div className="mx-auto grid max-w-5xl grid-cols-7">
           {tabs.map((t) => {
             const Icon = t.icon
             const active = tab === t.id

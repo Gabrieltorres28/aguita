@@ -1,0 +1,51 @@
+import type { Cliente, Movimiento } from "./types"
+import { formatARS, formatFecha } from "./storage"
+
+export function prepararTelefonoWhatsApp(telefono: string) {
+  const digits = telefono.replace(/[^\d]/g, "")
+  if (!digits) return ""
+  if (digits.startsWith("54")) return digits
+  if (digits.startsWith("0")) return `54${digits.slice(1)}`
+  return `54${digits}`
+}
+
+export function crearMensajeDeuda(cliente: Cliente, movimientos: Movimiento[]) {
+  const deuda = cliente.saldo < 0 ? -cliente.saldo : 0
+  const ventasPendientes = movimientos
+    .filter((mov) => mov.clienteId === cliente.id && mov.tipo === "entrega")
+    .filter((mov) => mov.saldoResultante < 0)
+    .slice(0, 12)
+
+  const detalleProductos =
+    ventasPendientes.length > 0
+      ? ventasPendientes
+          .map((mov) => {
+            const productos =
+              mov.productos?.length > 0
+                ? mov.productos
+                    .map((item) => `${item.cantidad} ${item.nombre}`)
+                    .join(", ")
+                : `${mov.bidonesEntregados} unidad(es)`
+            return `- ${formatFecha(mov.fechaVenta ?? mov.fecha)}: ${productos} (${formatARS(mov.total)})`
+          })
+          .join("\n")
+      : "- Sin ventas pendientes detalladas."
+
+  return `Hola ${cliente.nombre}, te enviamos el resumen de tu cuenta:
+
+Detalle:
+${detalleProductos}
+
+Total adeudado: ${formatARS(deuda)}
+
+Fecha del resumen: ${formatFecha(new Date().toISOString())}
+
+Podés abonar al repartidor o coordinar el pago por este medio.
+Gracias.`
+}
+
+export function crearUrlWhatsApp(telefono: string, mensaje: string) {
+  const numero = prepararTelefonoWhatsApp(telefono)
+  if (!numero) return ""
+  return `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`
+}

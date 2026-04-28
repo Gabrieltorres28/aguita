@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ArrowLeft, Trash2, Phone, MapPin } from "lucide-react"
+import { ArrowLeft, Trash2, Phone, MapPin, MessageCircle, ShoppingCart, Wallet, FileText } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +24,8 @@ import {
 import type { Cliente, Movimiento } from "@/lib/types"
 import { formatARS, formatFechaHora } from "@/lib/storage"
 import { Label } from "@/components/ui/label"
+import { crearMensajeDeuda, crearUrlWhatsApp } from "@/lib/whatsapp"
+import type { TipoMovimiento } from "@/lib/types"
 
 type Props = {
   clientes: Cliente[]
@@ -32,7 +34,7 @@ type Props = {
   onSeleccionarCliente: (id: string) => void
   onVolver: () => void
   onEliminarMovimiento: (id: string) => void
-  onIrRegistrar: (clienteId: string) => void
+  onIrRegistrar: (clienteId: string, tipo?: TipoMovimiento) => void
 }
 
 const tipoLabel: Record<Movimiento["tipo"], string> = {
@@ -59,6 +61,7 @@ export function CuentaCorriente({
   onIrRegistrar,
 }: Props) {
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
+  const [aviso, setAviso] = useState("")
 
   const cliente = useMemo(
     () => clientes.find((c) => c.id === clienteSeleccionadoId) ?? null,
@@ -73,13 +76,28 @@ export function CuentaCorriente({
     [movimientos, clienteSeleccionadoId],
   )
 
+  const ventas = movs.filter((m) => m.tipo === "entrega")
+  const cobros = movs.filter((m) => m.tipo === "pago" || m.pagoRecibido > 0)
+  const deudaActual = cliente && cliente.saldo < 0 ? -cliente.saldo : 0
+
+  const enviarDeuda = () => {
+    if (!cliente) return
+    const url = crearUrlWhatsApp(cliente.telefono, crearMensajeDeuda(cliente, movimientos))
+    if (!url) {
+      setAviso("El cliente no tiene un teléfono válido para WhatsApp.")
+      setTimeout(() => setAviso(""), 2500)
+      return
+    }
+    window.open(url, "_blank", "noopener,noreferrer")
+  }
+
   if (!cliente) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Cuenta corriente</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
+        <CardContent className="flex flex-col gap-3 lg:max-w-xl">
           <Label>Seleccioná un cliente</Label>
           <Select
             value={clienteSeleccionadoId ?? ""}
@@ -119,12 +137,23 @@ export function CuentaCorriente({
         >
           <ArrowLeft className="size-5" />
         </Button>
-        <h2 className="text-lg font-semibold leading-tight">{cliente.nombre}</h2>
+        <div className="flex flex-col">
+          <h2 className="text-lg font-semibold leading-tight">{cliente.nombre}</h2>
+          <span className="text-xs text-muted-foreground">
+            {cliente.activo ? "Cliente activo" : "Cliente inactivo"}
+          </span>
+        </div>
       </div>
+      {aviso && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {aviso}
+        </div>
+      )}
 
       <Card>
         <CardContent className="flex flex-col gap-3 p-4">
-          <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+          <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
+          <div className="flex flex-col gap-2 text-sm text-muted-foreground">
             {cliente.telefono && (
               <span className="flex items-center gap-2">
                 <Phone className="size-3.5" />
@@ -137,11 +166,21 @@ export function CuentaCorriente({
                 {cliente.direccion}
               </span>
             )}
+            {cliente.observaciones && (
+              <span className="flex items-start gap-2">
+                <FileText className="mt-0.5 size-3.5" />
+                {cliente.observaciones}
+              </span>
+            )}
+            <span>
+              Creado: {formatFechaHora(cliente.createdAt)} · Actualizado:{" "}
+              {formatFechaHora(cliente.updatedAt)}
+            </span>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-md border border-border bg-muted/40 px-3 py-3">
-              <p className="text-xs text-muted-foreground">Saldo</p>
+              <p className="text-xs text-muted-foreground">Deuda actual</p>
               <p
                 className={`text-lg font-bold ${
                   cliente.saldo < 0
@@ -151,7 +190,7 @@ export function CuentaCorriente({
                       : "text-foreground"
                 }`}
               >
-                {formatARS(cliente.saldo)}
+                {formatARS(deudaActual)}
               </p>
               <p className="text-[11px] text-muted-foreground">
                 {cliente.saldo < 0
@@ -169,16 +208,99 @@ export function CuentaCorriente({
               </p>
             </div>
           </div>
+          </div>
 
-          <Button
-            size="lg"
-            className="h-11 w-full"
-            onClick={() => onIrRegistrar(cliente.id)}
-          >
-            Registrar movimiento para este cliente
-          </Button>
+          <div className="grid gap-2 sm:grid-cols-3 lg:w-fit">
+            <Button
+              size="lg"
+              className="h-11 gap-2"
+              onClick={() => onIrRegistrar(cliente.id, "entrega")}
+            >
+              <ShoppingCart className="size-4" />
+              Registrar venta
+            </Button>
+            <Button
+              variant="secondary"
+              size="lg"
+              className="h-11 gap-2"
+              onClick={() => onIrRegistrar(cliente.id, "pago")}
+            >
+              <Wallet className="size-4" />
+              Registrar cobro
+            </Button>
+            <Button
+              variant="outline"
+              size="lg"
+              className="h-11 gap-2"
+              onClick={enviarDeuda}
+            >
+              <MessageCircle className="size-4" />
+              Enviar deuda
+            </Button>
+          </div>
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Historial de ventas ({ventas.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 p-4 pt-0">
+            {ventas.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin ventas registradas.</p>
+            ) : (
+              ventas.slice(0, 8).map((m) => (
+                <div key={m.id} className="rounded-md border border-border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium">{formatARS(m.total)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatFechaHora(m.fechaVenta ?? m.fecha)}
+                      </p>
+                    </div>
+                    <span className="text-sm font-semibold text-emerald-700">
+                      Pago {formatARS(m.pagoRecibido)}
+                    </span>
+                  </div>
+                  {m.productos?.length > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {m.productos.map((item) => `${item.cantidad} ${item.nombre}`).join(", ")}
+                    </p>
+                  )}
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Historial de cobros ({cobros.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 p-4 pt-0">
+            {cobros.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin cobros registrados.</p>
+            ) : (
+              cobros.slice(0, 8).map((m) => (
+                <div key={m.id} className="flex items-center justify-between rounded-md border border-border p-3">
+                  <div>
+                    <p className="text-sm font-medium text-emerald-700">
+                      {formatARS(m.pagoRecibido)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatFechaHora(m.fechaCobro ?? m.fechaVenta ?? m.fecha)}
+                    </p>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    Carga {formatFechaHora(m.fechaCarga ?? m.fecha)}
+                  </span>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader className="pb-2">
@@ -205,7 +327,10 @@ export function CuentaCorriente({
                       {tipoLabel[m.tipo]}
                     </span>
                     <span className="text-[11px] text-muted-foreground">
-                      {formatFechaHora(m.fecha)}
+                      Venta: {formatFechaHora(m.fechaVenta ?? m.fecha)}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      Carga: {formatFechaHora(m.fechaCarga ?? m.fecha)}
                     </span>
                   </div>
                   <Button
@@ -222,7 +347,7 @@ export function CuentaCorriente({
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
                   {m.bidonesEntregados > 0 && (
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Bidones</span>
+                      <span className="text-muted-foreground">Unidades</span>
                       <span className="font-medium">
                         {m.bidonesEntregados}
                       </span>
@@ -269,6 +394,14 @@ export function CuentaCorriente({
                     </span>
                   </div>
                 </div>
+
+                {m.productos?.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {m.productos
+                      .map((item) => `${item.cantidad} ${item.nombre}`)
+                      .join(", ")}
+                  </p>
+                )}
 
                 {m.observacion && (
                   <p className="border-t border-border pt-2 text-xs text-muted-foreground">

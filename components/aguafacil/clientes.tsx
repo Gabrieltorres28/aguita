@@ -10,6 +10,16 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import {
   Dialog,
   DialogContent,
@@ -28,16 +38,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Plus, Pencil, Trash2, Phone, MapPin, Search } from "lucide-react"
-import type { Cliente } from "@/lib/types"
+import { Plus, Pencil, Trash2, Phone, MapPin, Search, MessageCircle } from "lucide-react"
+import type { Cliente, Movimiento } from "@/lib/types"
 import { formatARS } from "@/lib/storage"
+import { crearMensajeDeuda, crearUrlWhatsApp } from "@/lib/whatsapp"
 
 type Props = {
   clientes: Cliente[]
-  onAgregar: (data: Pick<Cliente, "nombre" | "telefono" | "direccion">) => void
+  movimientos: Movimiento[]
+  onAgregar: (data: Pick<Cliente, "nombre" | "telefono" | "direccion" | "observaciones">) => void
   onEditar: (
     id: string,
-    data: Partial<Pick<Cliente, "nombre" | "telefono" | "direccion">>,
+    data: Partial<Pick<Cliente, "nombre" | "telefono" | "direccion" | "observaciones" | "activo">>,
   ) => void
   onEliminar: (id: string) => void
   onVerCuenta: (id: string) => void
@@ -45,6 +57,7 @@ type Props = {
 
 export function ClientesView({
   clientes,
+  movimientos,
   onAgregar,
   onEditar,
   onEliminar,
@@ -54,17 +67,28 @@ export function ClientesView({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editando, setEditando] = useState<Cliente | null>(null)
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
-  const [form, setForm] = useState({ nombre: "", telefono: "", direccion: "" })
+  const [aviso, setAviso] = useState("")
+  const [form, setForm] = useState({
+    nombre: "",
+    telefono: "",
+    direccion: "",
+    observaciones: "",
+  })
 
   const abrirNuevo = () => {
     setEditando(null)
-    setForm({ nombre: "", telefono: "", direccion: "" })
+    setForm({ nombre: "", telefono: "", direccion: "", observaciones: "" })
     setDialogOpen(true)
   }
 
   const abrirEditar = (c: Cliente) => {
     setEditando(c)
-    setForm({ nombre: c.nombre, telefono: c.telefono, direccion: c.direccion })
+    setForm({
+      nombre: c.nombre,
+      telefono: c.telefono,
+      direccion: c.direccion,
+      observaciones: c.observaciones,
+    })
     setDialogOpen(true)
   }
 
@@ -84,9 +108,23 @@ export function ClientesView({
     return (
       c.nombre.toLowerCase().includes(q) ||
       c.telefono.toLowerCase().includes(q) ||
-      c.direccion.toLowerCase().includes(q)
+      c.direccion.toLowerCase().includes(q) ||
+      c.observaciones.toLowerCase().includes(q)
     )
   })
+
+  const enviarDeuda = (cliente: Cliente) => {
+    const url = crearUrlWhatsApp(
+      cliente.telefono,
+      crearMensajeDeuda(cliente, movimientos),
+    )
+    if (!url) {
+      setAviso("El cliente no tiene un teléfono válido para WhatsApp.")
+      setTimeout(() => setAviso(""), 2500)
+      return
+    }
+    window.open(url, "_blank", "noopener,noreferrer")
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -105,6 +143,11 @@ export function ClientesView({
           Nuevo cliente
         </Button>
       </div>
+      {aviso && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {aviso}
+        </div>
+      )}
 
       {filtrados.length === 0 ? (
         <Card>
@@ -116,7 +159,91 @@ export function ClientesView({
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <>
+        <Card className="hidden lg:block">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>WhatsApp</TableHead>
+                  <TableHead>Dirección</TableHead>
+                  <TableHead className="text-right">Deuda</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="w-48 text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtrados.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell>
+                      <div className="font-medium">{c.nombre}</div>
+                      {c.observaciones && (
+                        <div className="max-w-72 truncate text-xs text-muted-foreground">
+                          {c.observaciones}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell>{c.telefono || "-"}</TableCell>
+                    <TableCell>{c.direccion || "-"}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {formatARS(c.saldo < 0 ? -c.saldo : 0)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={c.activo ? "default" : "secondary"}>
+                        {c.activo ? "Activo" : "Inactivo"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => onVerCuenta(c.id)}
+                          aria-label="Ver ficha"
+                        >
+                          <Search className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => enviarDeuda(c)}
+                          aria-label="Enviar deuda por WhatsApp"
+                        >
+                          <MessageCircle className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => abrirEditar(c)}
+                          aria-label="Editar"
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                        {c.activo && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-destructive hover:text-destructive"
+                            onClick={() => setEliminandoId(c.id)}
+                            aria-label="Desactivar"
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:hidden">
           {filtrados.map((c) => (
             <Card key={c.id} className="overflow-hidden">
               <CardHeader className="pb-2">
@@ -139,7 +266,7 @@ export function ClientesView({
                       size="icon"
                       className="size-8 text-destructive hover:text-destructive"
                       onClick={() => setEliminandoId(c.id)}
-                      aria-label="Eliminar"
+                      aria-label="Desactivar"
                     >
                       <Trash2 className="size-4" />
                     </Button>
@@ -193,14 +320,24 @@ export function ClientesView({
                 >
                   Ver cuenta corriente
                 </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
+                  className="h-11 w-full gap-2"
+                  onClick={() => enviarDeuda(c)}
+                >
+                  <MessageCircle className="size-4" />
+                  Enviar deuda por WhatsApp
+                </Button>
               </CardContent>
             </Card>
           ))}
         </div>
+        </>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
               {editando ? "Editar cliente" : "Nuevo cliente"}
@@ -209,7 +346,7 @@ export function ClientesView({
               Completá los datos del cliente.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-3">
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="nombre">Nombre</Label>
               <Input
@@ -243,6 +380,18 @@ export function ClientesView({
                 className="h-11"
               />
             </div>
+            <div className="flex flex-col gap-1.5 md:col-span-2">
+              <Label htmlFor="observaciones">Observaciones</Label>
+              <Textarea
+                id="observaciones"
+                value={form.observaciones}
+                onChange={(e) =>
+                  setForm({ ...form, observaciones: e.target.value })
+                }
+                placeholder="Notas internas del cliente..."
+                rows={3}
+              />
+            </div>
           </div>
           <DialogFooter className="gap-2">
             <Button
@@ -266,10 +415,10 @@ export function ClientesView({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar cliente?</AlertDialogTitle>
+            <AlertDialogTitle>¿Desactivar cliente?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se borrarán también todos los movimientos de este cliente. Esta
-              acción no se puede deshacer.
+              El cliente dejará de aparecer como activo, pero se conservan sus
+              movimientos e historial.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -281,7 +430,7 @@ export function ClientesView({
               }}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              Eliminar
+              Desactivar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

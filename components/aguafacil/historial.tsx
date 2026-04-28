@@ -10,9 +10,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { Search } from "lucide-react"
 import type { Cliente, Movimiento, TipoMovimiento } from "@/lib/types"
 import { formatARS, formatFechaHora } from "@/lib/storage"
+
+type Rango = "todos" | "hoy" | "semana" | "mes" | "custom"
 
 const tipoLabel: Record<TipoMovimiento, string> = {
   entrega: "Entrega",
@@ -36,6 +46,9 @@ export function Historial({
   movimientos: Movimiento[]
 }) {
   const [filtroTipo, setFiltroTipo] = useState<string>("todos")
+  const [rango, setRango] = useState<Rango>("todos")
+  const [desde, setDesde] = useState(() => toInputDate(new Date()))
+  const [hasta, setHasta] = useState(() => toInputDate(new Date()))
   const [busqueda, setBusqueda] = useState("")
 
   const clienteById = useMemo(() => {
@@ -46,8 +59,14 @@ export function Historial({
 
   const filtrados = useMemo(() => {
     const q = busqueda.toLowerCase().trim()
+    const rangoFechas = getDateRange(rango, desde, hasta)
     return movimientos
       .filter((m) => (filtroTipo === "todos" ? true : m.tipo === filtroTipo))
+      .filter((m) => {
+        if (!rangoFechas) return true
+        const fechaBase = m.tipo === "pago" && m.fechaCobro ? m.fechaCobro : m.fechaVenta ?? m.fecha
+        return inRange(fechaBase, rangoFechas.start, rangoFechas.end)
+      })
       .filter((m) => {
         if (!q) return true
         const c = clienteById.get(m.clienteId)
@@ -56,8 +75,8 @@ export function Historial({
           m.observacion.toLowerCase().includes(q)
         )
       })
-      .sort((a, b) => (a.fecha < b.fecha ? 1 : -1))
-  }, [movimientos, filtroTipo, busqueda, clienteById])
+      .sort((a, b) => ((a.fechaVenta ?? a.fecha) < (b.fechaVenta ?? b.fecha) ? 1 : -1))
+  }, [movimientos, filtroTipo, rango, desde, hasta, busqueda, clienteById])
 
   return (
     <Card>
@@ -67,7 +86,7 @@ export function Historial({
         </CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3 p-4 pt-0">
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="grid gap-2 lg:grid-cols-[minmax(240px,1fr)_180px_190px_160px_160px]">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -78,7 +97,7 @@ export function Historial({
             />
           </div>
           <Select value={filtroTipo} onValueChange={setFiltroTipo}>
-            <SelectTrigger className="h-11 sm:w-44">
+            <SelectTrigger className="h-11">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -89,6 +108,32 @@ export function Historial({
               <SelectItem value="ajuste">Ajustes</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={rango} onValueChange={(value) => setRango(value as Rango)}>
+            <SelectTrigger className="h-11">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todas las fechas</SelectItem>
+              <SelectItem value="hoy">Hoy</SelectItem>
+              <SelectItem value="semana">Esta semana</SelectItem>
+              <SelectItem value="mes">Este mes</SelectItem>
+              <SelectItem value="custom">Rango personalizado</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input
+            type="date"
+            value={desde}
+            disabled={rango !== "custom"}
+            onChange={(e) => setDesde(e.target.value)}
+            className="h-11"
+          />
+          <Input
+            type="date"
+            value={hasta}
+            disabled={rango !== "custom"}
+            onChange={(e) => setHasta(e.target.value)}
+            className="h-11"
+          />
         </div>
 
         {filtrados.length === 0 ? (
@@ -96,7 +141,57 @@ export function Historial({
             No hay movimientos que coincidan.
           </p>
         ) : (
-          <div className="flex flex-col gap-2">
+          <>
+          <div className="hidden lg:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha real</TableHead>
+                  <TableHead>Fecha carga</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Productos</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Pago</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtrados.map((m) => {
+                  const cliente = clienteById.get(m.clienteId)
+                  return (
+                    <TableRow key={m.id}>
+                      <TableCell>{formatFechaHora(m.fechaVenta ?? m.fecha)}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {formatFechaHora(m.fechaCarga ?? m.fecha)}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {cliente?.nombre ?? "Cliente eliminado"}
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${tipoColor[m.tipo]}`}
+                        >
+                          {tipoLabel[m.tipo]}
+                        </span>
+                      </TableCell>
+                      <TableCell className="max-w-64 whitespace-normal text-muted-foreground">
+                        {m.productos?.length
+                          ? m.productos.map((item) => `${item.cantidad} ${item.nombre}`).join(", ")
+                          : m.bidonesEntregados > 0
+                            ? `${m.bidonesEntregados} bidón(es)`
+                            : "-"}
+                      </TableCell>
+                      <TableCell className="text-right">{m.total > 0 ? formatARS(m.total) : "-"}</TableCell>
+                      <TableCell className="text-right text-emerald-700">
+                        {m.pagoRecibido > 0 ? formatARS(m.pagoRecibido) : "-"}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex flex-col gap-2 lg:hidden">
             {filtrados.map((m) => {
               const cliente = clienteById.get(m.clienteId)
               return (
@@ -110,7 +205,10 @@ export function Historial({
                         {cliente?.nombre ?? "Cliente eliminado"}
                       </span>
                       <span className="text-[11px] text-muted-foreground">
-                        {formatFechaHora(m.fecha)}
+                        Venta: {formatFechaHora(m.fechaVenta ?? m.fecha)}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        Carga: {formatFechaHora(m.fechaCarga ?? m.fecha)}
                       </span>
                     </div>
                     <span
@@ -122,7 +220,7 @@ export function Historial({
                   <div className="grid grid-cols-2 gap-x-3 text-xs">
                     {m.bidonesEntregados > 0 && (
                       <span>
-                        <span className="text-muted-foreground">Bidones: </span>
+                        <span className="text-muted-foreground">Unidades: </span>
                         <span className="font-medium">
                           {m.bidonesEntregados}
                         </span>
@@ -153,6 +251,13 @@ export function Historial({
                       </span>
                     )}
                   </div>
+                  {m.productos?.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {m.productos
+                        .map((item) => `${item.cantidad} ${item.nombre}`)
+                        .join(", ")}
+                    </p>
+                  )}
                   {m.observacion && (
                     <p className="text-xs text-muted-foreground">
                       {m.observacion}
@@ -162,8 +267,51 @@ export function Historial({
               )
             })}
           </div>
+          </>
         )}
       </CardContent>
     </Card>
   )
+}
+
+function getDateRange(rango: Rango, desde: string, hasta: string) {
+  if (rango === "todos") return null
+  const now = new Date()
+  const start = new Date(now)
+  const end = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  end.setHours(23, 59, 59, 999)
+
+  if (rango === "semana") {
+    const day = start.getDay() || 7
+    start.setDate(start.getDate() - day + 1)
+  } else if (rango === "mes") {
+    start.setDate(1)
+  } else if (rango === "custom") {
+    return {
+      start: startOfInputDate(desde),
+      end: endOfInputDate(hasta),
+    }
+  }
+
+  return { start, end }
+}
+
+function inRange(iso: string, start: Date, end: Date) {
+  const date = new Date(iso)
+  return date >= start && date <= end
+}
+
+function toInputDate(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
+
+function startOfInputDate(value: string) {
+  const date = new Date(`${value}T00:00:00`)
+  return Number.isNaN(date.getTime()) ? new Date(0) : date
+}
+
+function endOfInputDate(value: string) {
+  const date = new Date(`${value}T23:59:59`)
+  return Number.isNaN(date.getTime()) ? new Date() : date
 }
