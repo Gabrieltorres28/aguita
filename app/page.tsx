@@ -204,6 +204,7 @@ export default function Page() {
         )}
         {tab === "ajustes" && (
           <Ajustes
+            db={db}
             precioBidon={db.precioBidon}
             onActualizarPrecio={setPrecioBidon}
             onLimpiarTodo={limpiarTodo}

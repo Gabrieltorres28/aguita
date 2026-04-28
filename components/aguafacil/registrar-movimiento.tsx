@@ -15,7 +15,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { formatARS } from "@/lib/storage"
-import type { Cliente, Producto, TipoMovimiento } from "@/lib/types"
+import type { Cliente, MetodoPago, Producto, TipoMovimiento } from "@/lib/types"
 import { Droplets, ArrowLeftRight, Wallet, CheckCircle2, Plus, Trash2 } from "lucide-react"
 
 type Props = {
@@ -32,6 +32,9 @@ type Props = {
     envasesRetirados: number
     precioUnitario: number
     pagoRecibido: number
+    metodoPago?: MetodoPago
+    envasesRetirados12?: number
+    envasesRetirados20?: number
     observacion: string
     fechaVenta?: string
     fechaCobro?: string
@@ -51,9 +54,11 @@ export function RegistrarMovimiento({
   const [lineas, setLineas] = useState<
     { id: string; productoId: string; cantidad: number; precioUnitario: number }[]
   >([])
-  const [envasesRetirados, setEnvasesRetirados] = useState<number>(0)
+  const [envasesRetirados12, setEnvasesRetirados12] = useState<number>(0)
+  const [envasesRetirados20, setEnvasesRetirados20] = useState<number>(0)
   const [precio, setPrecio] = useState<number>(precioBidon)
   const [pago, setPago] = useState<number>(0)
+  const [metodoPago, setMetodoPago] = useState<MetodoPago>("efectivo")
   const [observacion, setObservacion] = useState<string>("")
   const [fechaVenta, setFechaVenta] = useState<string>(() => toInputDate(new Date()))
   const [fechaCobro, setFechaCobro] = useState<string>("")
@@ -126,7 +131,8 @@ export function RegistrarMovimiento({
           ]
         : [],
     )
-    setEnvasesRetirados(0)
+    setEnvasesRetirados12(0)
+    setEnvasesRetirados20(0)
     setPago(0)
     setObservacion("")
     setFechaVenta(toInputDate(new Date()))
@@ -144,8 +150,8 @@ export function RegistrarMovimiento({
 
   const previewComodato = useMemo(() => {
     if (!cliente) return 0
-    return cliente.envasesComodato + unidadesEntregadas - envasesRetirados
-  }, [cliente, unidadesEntregadas, envasesRetirados])
+    return cliente.envasesComodato + unidadesEntregadas - envasesRetirados12 - envasesRetirados20
+  }, [cliente, unidadesEntregadas, envasesRetirados12, envasesRetirados20])
 
   const handleSubmit = () => {
     if (!clienteId) return
@@ -162,9 +168,13 @@ export function RegistrarMovimiento({
             }))
           : [],
       bidonesEntregados: tipo === "entrega" ? unidadesEntregadas : 0,
-      envasesRetirados: tipo === "retiro" || tipo === "entrega" ? envasesRetirados : 0,
+      envasesRetirados:
+        tipo === "retiro" || tipo === "entrega" ? envasesRetirados12 + envasesRetirados20 : 0,
+      envasesRetirados12: tipo === "retiro" || tipo === "entrega" ? envasesRetirados12 : 0,
+      envasesRetirados20: tipo === "retiro" || tipo === "entrega" ? envasesRetirados20 : 0,
       precioUnitario: tipo === "entrega" ? precio : 0,
       pagoRecibido: tipo === "retiro" ? 0 : pago,
+      metodoPago: pago > 0 && tipo !== "retiro" ? metodoPago : undefined,
       observacion,
       fechaVenta: fromInputDate(fechaVenta),
       fechaCobro:
@@ -278,6 +288,9 @@ export function RegistrarMovimiento({
               <p className="text-[11px] text-muted-foreground">En comodato</p>
               <p className="text-sm font-semibold">
                 {cliente.envasesComodato} envase(s)
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                12L: {cliente.envasesComodato12} · 20L: {cliente.envasesComodato20}
               </p>
             </div>
           </div>
@@ -418,17 +431,31 @@ export function RegistrarMovimiento({
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="retirados">Envases retirados</Label>
+              <Label htmlFor="retirados-12">Retirados 12L</Label>
               <Input
-                id="retirados"
+                id="retirados-12"
                 type="number"
                 inputMode="numeric"
                 min={0}
-                value={envasesRetirados}
+                value={envasesRetirados12}
                 onChange={(e) =>
-                  setEnvasesRetirados(Number(e.target.value) || 0)
+                  setEnvasesRetirados12(Number(e.target.value) || 0)
+                }
+                className="h-11"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="retirados-20">Retirados 20L</Label>
+              <Input
+                id="retirados-20"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={envasesRetirados20}
+                onChange={(e) =>
+                  setEnvasesRetirados20(Number(e.target.value) || 0)
                 }
                 className="h-11"
               />
@@ -450,17 +477,31 @@ export function RegistrarMovimiento({
         )}
 
         {tipo === "retiro" && (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="retirados-only">Envases retirados</Label>
-            <Input
-              id="retirados-only"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              value={envasesRetirados}
-              onChange={(e) => setEnvasesRetirados(Number(e.target.value) || 0)}
-              className="h-11"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="retirados-only-12">Retirados 12L</Label>
+              <Input
+                id="retirados-only-12"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={envasesRetirados12}
+                onChange={(e) => setEnvasesRetirados12(Number(e.target.value) || 0)}
+                className="h-11"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="retirados-only-20">Retirados 20L</Label>
+              <Input
+                id="retirados-only-20"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={envasesRetirados20}
+                onChange={(e) => setEnvasesRetirados20(Number(e.target.value) || 0)}
+                className="h-11"
+              />
+            </div>
           </div>
         )}
 
@@ -476,6 +517,21 @@ export function RegistrarMovimiento({
               onChange={(e) => setPago(Number(e.target.value) || 0)}
               className="h-11"
             />
+          </div>
+        )}
+
+        {pago > 0 && tipo !== "retiro" && (
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="metodo-pago">Método de pago</Label>
+            <Select value={metodoPago} onValueChange={(value) => setMetodoPago(value as MetodoPago)}>
+              <SelectTrigger id="metodo-pago" className="h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="efectivo">Efectivo</SelectItem>
+                <SelectItem value="transferencia">Transferencia</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         )}
 

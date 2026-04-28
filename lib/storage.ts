@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { Session } from "@supabase/supabase-js"
 import { supabase, supabaseConfigError } from "./supabaseClient"
-import type { Cliente, DB, Movimiento, MovimientoProducto, Producto, TipoMovimiento } from "./types"
+import type { Cliente, DB, MetodoPago, Movimiento, MovimientoProducto, Producto, TipoMovimiento } from "./types"
 
 const defaultDB: DB = {
   clientes: [],
@@ -79,6 +79,8 @@ function mapClient(row: ClientRow): Cliente {
     activo: row.is_active ?? true,
     saldo: numberValue(row.balance),
     envasesComodato: (row.containers_12_on_loan ?? 0) + (row.containers_20_on_loan ?? 0),
+    envasesComodato12: row.containers_12_on_loan ?? 0,
+    envasesComodato20: row.containers_20_on_loan ?? 0,
     createdAt,
     updatedAt: createdAt,
   }
@@ -118,6 +120,18 @@ function mapMovement(row: MovementRow): Movimiento {
     (sum, item) => sum + (item.containers_returned ?? 0),
     0,
   )
+  const entregados12 = (row.movement_items ?? [])
+    .filter((item) => item.container_type === "12")
+    .reduce((sum, item) => sum + (item.containers_delivered ?? 0), 0)
+  const entregados20 = (row.movement_items ?? [])
+    .filter((item) => item.container_type !== "12")
+    .reduce((sum, item) => sum + (item.containers_delivered ?? 0), 0)
+  const retirados12 = (row.movement_items ?? [])
+    .filter((item) => item.container_type === "12")
+    .reduce((sum, item) => sum + (item.containers_returned ?? 0), 0)
+  const retirados20 = (row.movement_items ?? [])
+    .filter((item) => item.container_type !== "12")
+    .reduce((sum, item) => sum + (item.containers_returned ?? 0), 0)
   const total = numberValue(row.total_amount)
   const pagoRecibido = numberValue(row.paid_amount)
   const fecha = `${row.movement_date}T12:00:00.000Z`
@@ -139,10 +153,18 @@ function mapMovement(row: MovementRow): Movimiento {
         : undefined,
     bidonesEntregados: entregados,
     envasesRetirados: retirados,
+    envasesEntregados12: entregados12,
+    envasesEntregados20: entregados20,
+    envasesRetirados12: retirados12,
+    envasesRetirados20: retirados20,
     precioUnitario: productos.length === 1 ? productos[0].precioUnitario : 0,
     productos,
     total,
     pagoRecibido,
+    metodoPago:
+      row.payment_method === "transferencia" || row.payment_method === "efectivo"
+        ? row.payment_method
+        : undefined,
     saldoResultante: numberValue(row.balance_after),
     observacion: row.notes ?? "",
   }
@@ -323,13 +345,18 @@ export function useDB() {
   )
 
   const agregarCliente = useCallback(
-    (data: Pick<Cliente, "nombre" | "telefono" | "direccion" | "observaciones">) => {
+    (
+      data: Pick<Cliente, "nombre" | "telefono" | "direccion" | "observaciones"> &
+        Partial<Pick<Cliente, "envasesComodato12" | "envasesComodato20">>,
+    ) => {
       void runMutation(async () => {
         const { error: insertError } = await supabase.from("clients").insert({
           name: data.nombre.trim(),
           phone: data.telefono.trim(),
           address: data.direccion.trim(),
           notes: data.observaciones.trim(),
+          containers_12_on_loan: Number(data.envasesComodato12) || 0,
+          containers_20_on_loan: Number(data.envasesComodato20) || 0,
         })
         if (insertError) throw insertError
       })
@@ -340,15 +367,32 @@ export function useDB() {
   const editarCliente = useCallback(
     (
       id: string,
-      data: Partial<Pick<Cliente, "nombre" | "telefono" | "direccion" | "observaciones" | "activo">>,
+      data: Partial<
+        Pick<
+          Cliente,
+          | "nombre"
+          | "telefono"
+          | "direccion"
+          | "observaciones"
+          | "activo"
+          | "envasesComodato12"
+          | "envasesComodato20"
+        >
+      >,
     ) => {
       void runMutation(async () => {
-        const patch: Record<string, string | boolean> = {}
+        const patch: Record<string, string | number | boolean> = {}
         if (data.nombre !== undefined) patch.name = data.nombre.trim()
         if (data.telefono !== undefined) patch.phone = data.telefono.trim()
         if (data.direccion !== undefined) patch.address = data.direccion.trim()
         if (data.observaciones !== undefined) patch.notes = data.observaciones.trim()
         if (data.activo !== undefined) patch.is_active = data.activo
+        if (data.envasesComodato12 !== undefined) {
+          patch.containers_12_on_loan = Number(data.envasesComodato12) || 0
+        }
+        if (data.envasesComodato20 !== undefined) {
+          patch.containers_20_on_loan = Number(data.envasesComodato20) || 0
+        }
 
         const { error: updateError } = await supabase.from("clients").update(patch).eq("id", id)
         if (updateError) throw updateError
@@ -383,6 +427,9 @@ export function useDB() {
       precioUnitario: number
       pagoRecibido: number
       observacion: string
+      metodoPago?: MetodoPago
+      envasesRetirados12?: number
+      envasesRetirados20?: number
       fechaVenta?: string
       fechaCobro?: string
       fecha?: string
@@ -441,15 +488,33 @@ export function useDB() {
           }
         })
 
-        if (input.envasesRetirados > 0) {
+        const envasesRetirados12 = Number(input.envasesRetirados12) || 0
+        const envasesRetirados20 =
+          input.envasesRetirados20 !== undefined
+            ? Number(input.envasesRetirados20) || 0
+            : Number(input.envasesRetirados) || 0
+
+        if (envasesRetirados12 > 0) {
           movementItems.push({
-            product_id: lineas[0]?.producto.id ?? null,
+            product_id: null,
             quantity: 0,
             unit_price: 0,
             line_total: 0,
-            container_type: lineas[0] ? getContainerBucket(lineas[0].producto) : "20",
+            container_type: "12",
             containers_delivered: 0,
-            containers_returned: input.envasesRetirados,
+            containers_returned: envasesRetirados12,
+          })
+        }
+
+        if (envasesRetirados20 > 0) {
+          movementItems.push({
+            product_id: null,
+            quantity: 0,
+            unit_price: 0,
+            line_total: 0,
+            container_type: "20",
+            containers_delivered: 0,
+            containers_returned: envasesRetirados20,
           })
         }
 
@@ -468,7 +533,10 @@ export function useDB() {
             movement_date: toMovementDate(input.fechaVenta ?? input.fecha),
             total_amount: total,
             paid_amount: input.tipo === "retiro" ? 0 : Number(input.pagoRecibido) || 0,
-            payment_method: input.tipo === "pago" ? "efectivo" : null,
+            payment_method:
+              input.tipo !== "retiro" && Number(input.pagoRecibido) > 0
+                ? input.metodoPago ?? "efectivo"
+                : null,
             balance_after: nuevoSaldo,
             notes: input.observacion.trim(),
           })

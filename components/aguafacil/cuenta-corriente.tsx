@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectContent,
@@ -10,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ArrowLeft, Trash2, Phone, MapPin, MessageCircle, ShoppingCart, Wallet, FileText } from "lucide-react"
+import { ArrowLeft, Trash2, Phone, MapPin, MessageCircle, ShoppingCart, Wallet, FileText, Search } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,6 +63,7 @@ export function CuentaCorriente({
 }: Props) {
   const [eliminandoId, setEliminandoId] = useState<string | null>(null)
   const [aviso, setAviso] = useState("")
+  const [busquedaCliente, setBusquedaCliente] = useState("")
 
   const cliente = useMemo(
     () => clientes.find((c) => c.id === clienteSeleccionadoId) ?? null,
@@ -79,6 +81,16 @@ export function CuentaCorriente({
   const ventas = movs.filter((m) => m.tipo === "entrega")
   const cobros = movs.filter((m) => m.tipo === "pago" || m.pagoRecibido > 0)
   const deudaActual = cliente && cliente.saldo < 0 ? -cliente.saldo : 0
+  const clientesFiltrados = useMemo(() => {
+    const q = busquedaCliente.toLowerCase().trim()
+    if (!q) return clientes
+    return clientes.filter(
+      (c) =>
+        c.nombre.toLowerCase().includes(q) ||
+        c.telefono.toLowerCase().includes(q) ||
+        c.direccion.toLowerCase().includes(q),
+    )
+  }, [clientes, busquedaCliente])
 
   const enviarDeuda = () => {
     if (!cliente) return
@@ -99,6 +111,15 @@ export function CuentaCorriente({
         </CardHeader>
         <CardContent className="flex flex-col gap-3 lg:max-w-xl">
           <Label>Seleccioná un cliente</Label>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={busquedaCliente}
+              onChange={(e) => setBusquedaCliente(e.target.value)}
+              placeholder="Buscar por nombre, teléfono o dirección..."
+              className="h-11 pl-9"
+            />
+          </div>
           <Select
             value={clienteSeleccionadoId ?? ""}
             onValueChange={onSeleccionarCliente}
@@ -107,12 +128,12 @@ export function CuentaCorriente({
               <SelectValue placeholder="Elegir cliente..." />
             </SelectTrigger>
             <SelectContent>
-              {clientes.length === 0 ? (
+              {clientesFiltrados.length === 0 ? (
                 <div className="px-2 py-2 text-sm text-muted-foreground">
                   No hay clientes cargados.
                 </div>
               ) : (
-                clientes.map((c) => (
+                clientesFiltrados.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.nombre}
                   </SelectItem>
@@ -204,7 +225,7 @@ export function CuentaCorriente({
               <p className="text-xs text-muted-foreground">Envases en calle</p>
               <p className="text-lg font-bold">{cliente.envasesComodato}</p>
               <p className="text-[11px] text-muted-foreground">
-                en comodato
+                12L: {cliente.envasesComodato12} · 20L: {cliente.envasesComodato20}
               </p>
             </div>
           </div>
@@ -361,6 +382,22 @@ export function CuentaCorriente({
                       <span className="font-medium">{m.envasesRetirados}</span>
                     </div>
                   )}
+                  {(m.envasesEntregados12 > 0 || m.envasesEntregados20 > 0) && (
+                    <div className="col-span-2 flex justify-between">
+                      <span className="text-muted-foreground">Entregados</span>
+                      <span className="font-medium">
+                        12L: {m.envasesEntregados12} · 20L: {m.envasesEntregados20}
+                      </span>
+                    </div>
+                  )}
+                  {(m.envasesRetirados12 > 0 || m.envasesRetirados20 > 0) && (
+                    <div className="col-span-2 flex justify-between">
+                      <span className="text-muted-foreground">Retirados</span>
+                      <span className="font-medium">
+                        12L: {m.envasesRetirados12} · 20L: {m.envasesRetirados20}
+                      </span>
+                    </div>
+                  )}
                   {m.total > 0 && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total</span>
@@ -375,6 +412,12 @@ export function CuentaCorriente({
                       <span className="font-medium text-emerald-700">
                         {formatARS(m.pagoRecibido)}
                       </span>
+                    </div>
+                  )}
+                  {m.metodoPago && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Método</span>
+                      <span className="font-medium capitalize">{m.metodoPago}</span>
                     </div>
                   )}
                   <div className="col-span-2 flex justify-between border-t border-border pt-1">

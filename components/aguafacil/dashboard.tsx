@@ -45,6 +45,12 @@ export function Dashboard({ db }: { db: DB }) {
   const unidadesPeriodo = movsPeriodo.reduce((s, m) => s + m.bidonesEntregados, 0)
   const vendidoPeriodo = movsPeriodo.reduce((s, m) => s + m.total, 0)
   const cobradoPeriodo = cobrosPeriodo.reduce((s, m) => s + m.pagoRecibido, 0)
+  const cobradoEfectivo = cobrosPeriodo
+    .filter((m) => (m.metodoPago ?? "efectivo") === "efectivo")
+    .reduce((s, m) => s + m.pagoRecibido, 0)
+  const cobradoTransferencia = cobrosPeriodo
+    .filter((m) => m.metodoPago === "transferencia")
+    .reduce((s, m) => s + m.pagoRecibido, 0)
   const stockTotal = db.productos
     .filter((producto) => producto.activo)
     .reduce((sum, producto) => sum + producto.stockActual, 0)
@@ -88,9 +94,21 @@ export function Dashboard({ db }: { db: DB }) {
       tone: "text-primary",
     },
     {
-      label: "Cobrado periodo",
+      label: "Cobrado total",
       valor: formatARS(cobradoPeriodo),
       icon: TrendingUp,
+      tone: "text-emerald-600",
+    },
+    {
+      label: "Cobrado efectivo",
+      valor: formatARS(cobradoEfectivo),
+      icon: Wallet,
+      tone: "text-emerald-600",
+    },
+    {
+      label: "Cobrado transferencia",
+      valor: formatARS(cobradoTransferencia),
+      icon: Wallet,
       tone: "text-emerald-600",
     },
     {
@@ -175,6 +193,26 @@ export function Dashboard({ db }: { db: DB }) {
               <span className="font-semibold">
                 {movsPeriodo.filter((m) => m.tipo === "entrega").length}
               </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Cobros del periodo</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 p-4 pt-0">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Efectivo</span>
+              <span className="font-semibold">{formatARS(cobradoEfectivo)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Transferencia</span>
+              <span className="font-semibold">{formatARS(cobradoTransferencia)}</span>
+            </div>
+            <div className="flex items-center justify-between border-t border-border pt-2 text-sm">
+              <span className="text-muted-foreground">Total cobrado</span>
+              <span className="font-semibold text-emerald-600">{formatARS(cobradoPeriodo)}</span>
             </div>
           </CardContent>
         </Card>

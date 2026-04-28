@@ -46,10 +46,26 @@ import { crearMensajeDeuda, crearUrlWhatsApp } from "@/lib/whatsapp"
 type Props = {
   clientes: Cliente[]
   movimientos: Movimiento[]
-  onAgregar: (data: Pick<Cliente, "nombre" | "telefono" | "direccion" | "observaciones">) => void
+  onAgregar: (
+    data: Pick<
+      Cliente,
+      "nombre" | "telefono" | "direccion" | "observaciones" | "envasesComodato12" | "envasesComodato20"
+    >,
+  ) => void
   onEditar: (
     id: string,
-    data: Partial<Pick<Cliente, "nombre" | "telefono" | "direccion" | "observaciones" | "activo">>,
+    data: Partial<
+      Pick<
+        Cliente,
+        | "nombre"
+        | "telefono"
+        | "direccion"
+        | "observaciones"
+        | "activo"
+        | "envasesComodato12"
+        | "envasesComodato20"
+      >
+    >,
   ) => void
   onEliminar: (id: string) => void
   onVerCuenta: (id: string) => void
@@ -73,11 +89,20 @@ export function ClientesView({
     telefono: "",
     direccion: "",
     observaciones: "",
+    envasesComodato12: 0,
+    envasesComodato20: 0,
   })
 
   const abrirNuevo = () => {
     setEditando(null)
-    setForm({ nombre: "", telefono: "", direccion: "", observaciones: "" })
+    setForm({
+      nombre: "",
+      telefono: "",
+      direccion: "",
+      observaciones: "",
+      envasesComodato12: 0,
+      envasesComodato20: 0,
+    })
     setDialogOpen(true)
   }
 
@@ -88,6 +113,8 @@ export function ClientesView({
       telefono: c.telefono,
       direccion: c.direccion,
       observaciones: c.observaciones,
+      envasesComodato12: c.envasesComodato12,
+      envasesComodato20: c.envasesComodato20,
     })
     setDialogOpen(true)
   }
@@ -310,6 +337,9 @@ export function ClientesView({
                     <p className="text-sm font-bold">
                       {c.envasesComodato} envase(s)
                     </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      12L: {c.envasesComodato12} · 20L: {c.envasesComodato20}
+                    </p>
                   </div>
                 </div>
                 <Button
@@ -390,6 +420,34 @@ export function ClientesView({
                 }
                 placeholder="Notas internas del cliente..."
                 rows={3}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="comodato-12">Envases 12L en comodato</Label>
+              <Input
+                id="comodato-12"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={form.envasesComodato12}
+                onChange={(e) =>
+                  setForm({ ...form, envasesComodato12: Number(e.target.value) || 0 })
+                }
+                className="h-11"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="comodato-20">Envases 20L en comodato</Label>
+              <Input
+                id="comodato-20"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={form.envasesComodato20}
+                onChange={(e) =>
+                  setForm({ ...form, envasesComodato20: Number(e.target.value) || 0 })
+                }
+                className="h-11"
               />
             </div>
           </div>

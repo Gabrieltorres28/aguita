@@ -7,11 +7,14 @@ export type Cliente = {
   activo: boolean
   saldo: number // positivo = a favor, negativo = deuda
   envasesComodato: number
+  envasesComodato12: number
+  envasesComodato20: number
   createdAt: string
   updatedAt: string
 }
 
 export type TipoMovimiento = "entrega" | "retiro" | "pago" | "ajuste"
+export type MetodoPago = "efectivo" | "transferencia"
 
 export type Producto = {
   id: string
@@ -45,9 +48,14 @@ export type Movimiento = {
   estado?: "pagada" | "pendiente"
   bidonesEntregados: number
   envasesRetirados: number
+  envasesEntregados12: number
+  envasesEntregados20: number
+  envasesRetirados12: number
+  envasesRetirados20: number
   precioUnitario: number
   total: number
   pagoRecibido: number
+  metodoPago?: MetodoPago
   saldoResultante: number
   observacion: string
 }
