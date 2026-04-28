@@ -65,7 +65,7 @@ export default function LoginPage() {
           <div>
             <CardTitle className="text-xl">Ingresar a Agüita</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Usá tu email y contraseña de Supabase Auth.
+              Iniciá sesión con tu email y contraseña.
             </p>
           </div>
         </CardHeader>
