@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useDB } from "@/lib/storage"
+import { BrandLogo } from "@/components/brand-logo"
 import { Dashboard } from "@/components/aguafacil/dashboard"
 import { ClientesView } from "@/components/aguafacil/clientes"
 import { RegistrarMovimiento } from "@/components/aguafacil/registrar-movimiento"
@@ -10,6 +11,7 @@ import { Historial } from "@/components/aguafacil/historial"
 import { Ajustes } from "@/components/aguafacil/ajustes"
 import { StockView } from "@/components/aguafacil/stock"
 import { Button } from "@/components/ui/button"
+import { ThemeToggle } from "@/components/theme-toggle"
 import {
   LayoutDashboard,
   Users,
@@ -17,7 +19,6 @@ import {
   FileText,
   History,
   Settings,
-  Droplets,
   Package,
   LogOut,
 } from "lucide-react"
@@ -85,7 +86,7 @@ export default function Page() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-2 text-muted-foreground">
-          <Droplets className="size-8 animate-pulse text-primary" />
+          <BrandLogo className="size-12 animate-pulse" priority />
           <p className="text-sm">Cargando...</p>
         </div>
       </div>
@@ -97,29 +98,24 @@ export default function Page() {
       {/* Header */}
       <header className="sticky top-0 z-30 border-b border-border bg-card lg:fixed lg:bottom-0 lg:left-0 lg:flex lg:w-64 lg:flex-col lg:border-b-0 lg:border-r">
         <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 py-3 lg:mx-0 lg:max-w-none lg:px-5 lg:py-5">
-          <div className="flex items-center gap-2">
-            <div className="flex size-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <Droplets className="size-5" />
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span className="text-base font-bold">Agüita</span>
-              <span className="text-[11px] text-muted-foreground">
-                Sistema de reparto
-              </span>
-            </div>
+          <div className="flex min-w-0 items-center">
+            <BrandLogo className="size-16 shrink-0 sm:size-20 lg:size-24" priority />
           </div>
-          <span className="hidden rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground sm:inline lg:hidden">
-            Supabase
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden h-9 gap-2 lg:flex"
-            onClick={logout}
-          >
-            <LogOut className="size-4" />
-            Salir
-          </Button>
+          <div className="flex items-center gap-1">
+            <span className="hidden rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground sm:inline lg:hidden">
+              Supabase
+            </span>
+            <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden h-9 gap-2 lg:flex"
+              onClick={logout}
+            >
+              <LogOut className="size-4" />
+              Salir
+            </Button>
+          </div>
         </div>
 
         {/* Desktop nav */}

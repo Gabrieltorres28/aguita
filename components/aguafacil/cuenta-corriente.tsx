@@ -227,6 +227,9 @@ export function CuentaCorriente({
               <p className="text-[11px] text-muted-foreground">
                 12L: {cliente.envasesComodato12} · 20L: {cliente.envasesComodato20}
               </p>
+              <p className="text-[11px] text-muted-foreground">
+                Disp. frío: {cliente.dispenserFrioComodato} · calor: {cliente.dispenserCalorComodato}
+              </p>
             </div>
           </div>
           </div>

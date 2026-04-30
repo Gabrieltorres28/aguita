@@ -2,8 +2,9 @@
 
 import { FormEvent, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Droplets, LogIn } from "lucide-react"
+import { LogIn } from "lucide-react"
 import { supabase, supabaseConfigError } from "@/lib/supabaseClient"
+import { BrandLogo } from "@/components/brand-logo"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -50,7 +51,7 @@ export default function LoginPage() {
   if (checking) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <Droplets className="size-8 animate-pulse text-primary" />
+        <BrandLogo className="size-12 animate-pulse" priority />
       </div>
     )
   }
@@ -59,9 +60,7 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-background px-4">
       <Card className="w-full max-w-sm">
         <CardHeader className="space-y-3">
-          <div className="flex size-11 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Droplets className="size-6" />
-          </div>
+          <BrandLogo className="mx-auto size-36 sm:size-40" priority />
           <div>
             <CardTitle className="text-xl">Ingresar a Agüita</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">

@@ -9,6 +9,8 @@ export type Cliente = {
   envasesComodato: number
   envasesComodato12: number
   envasesComodato20: number
+  dispenserFrioComodato: number
+  dispenserCalorComodato: number
   createdAt: string
   updatedAt: string
 }

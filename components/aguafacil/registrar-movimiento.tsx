@@ -14,9 +14,28 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
 import { formatARS } from "@/lib/storage"
 import type { Cliente, MetodoPago, Producto, TipoMovimiento } from "@/lib/types"
-import { Droplets, ArrowLeftRight, Wallet, CheckCircle2, Plus, Trash2 } from "lucide-react"
+import { cn } from "@/lib/utils"
+import {
+  Droplets,
+  ArrowLeftRight,
+  Wallet,
+  CheckCircle2,
+  Plus,
+  Trash2,
+  Check,
+  ChevronsUpDown,
+} from "lucide-react"
 
 type Props = {
   clientes: Cliente[]
@@ -51,6 +70,7 @@ export function RegistrarMovimiento({
 }: Props) {
   const [tipo, setTipo] = useState<TipoMovimiento>("entrega")
   const [clienteId, setClienteId] = useState<string>(clienteSeleccionadoId ?? "")
+  const [clienteOpen, setClienteOpen] = useState(false)
   const [lineas, setLineas] = useState<
     { id: string; productoId: string; cantidad: number; precioUnitario: number }[]
   >([])
@@ -108,6 +128,35 @@ export function RegistrarMovimiento({
     tipo === "entrega"
       ? lineas.reduce((sum, linea) => sum + linea.cantidad * linea.precioUnitario, 0)
       : 0
+  const stockInsuficiente = useMemo(() => {
+    if (tipo !== "entrega") return null
+    const cantidadesPorProducto = new Map<string, number>()
+    lineas.forEach((linea) => {
+      cantidadesPorProducto.set(
+        linea.productoId,
+        (cantidadesPorProducto.get(linea.productoId) ?? 0) + linea.cantidad,
+      )
+    })
+
+    for (const [productoId, cantidad] of cantidadesPorProducto.entries()) {
+      const producto = productos.find((item) => item.id === productoId)
+      if (producto && cantidad > producto.stockActual) return producto
+    }
+
+    return null
+  }, [lineas, productos, tipo])
+  const lineasInvalidas =
+    tipo === "entrega" &&
+    (lineas.length === 0 ||
+      lineas.some((linea) => !linea.productoId || linea.cantidad <= 0 || linea.precioUnitario < 0))
+  const mensajeValidacion = !clienteId
+    ? "Seleccioná un cliente para asociar el movimiento."
+    : lineasInvalidas
+      ? "Agregá al menos un producto con cantidad mayor a cero."
+      : stockInsuficiente
+        ? `No hay stock suficiente de ${stockInsuficiente.nombre}.`
+        : ""
+  const puedeRegistrar = !mensajeValidacion
   const unidadesEntregadas =
     tipo === "entrega"
       ? lineas.reduce((sum, linea) => {
@@ -154,8 +203,7 @@ export function RegistrarMovimiento({
   }, [cliente, unidadesEntregadas, envasesRetirados12, envasesRetirados20])
 
   const handleSubmit = () => {
-    if (!clienteId) return
-    if (tipo === "entrega" && lineas.length === 0) return
+    if (!puedeRegistrar) return
     onRegistrar({
       clienteId,
       tipo,
@@ -225,24 +273,60 @@ export function RegistrarMovimiento({
         <div className="grid gap-3 md:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="cliente">Cliente</Label>
-            <Select value={clienteId} onValueChange={setClienteId}>
-              <SelectTrigger id="cliente" className="h-11">
-                <SelectValue placeholder="Seleccionar cliente..." />
-              </SelectTrigger>
-              <SelectContent>
-                {clientes.length === 0 ? (
-                  <div className="px-2 py-2 text-sm text-muted-foreground">
-                    No hay clientes cargados.
-                  </div>
-                ) : (
-                clientesActivos.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.nombre}
-                  </SelectItem>
-                ))
-                )}
-              </SelectContent>
-            </Select>
+            <Popover open={clienteOpen} onOpenChange={setClienteOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  id="cliente"
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={clienteOpen}
+                  className="h-11 w-full justify-between"
+                >
+                  <span className="truncate">
+                    {cliente ? cliente.nombre : "Seleccionar cliente..."}
+                  </span>
+                  <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Buscar por nombre, teléfono o dirección..." />
+                  <CommandList>
+                    <CommandEmpty>
+                      {clientes.length === 0
+                        ? "No hay clientes cargados."
+                        : "No se encontraron clientes."}
+                    </CommandEmpty>
+                    <CommandGroup>
+                      {clientesActivos.map((c) => (
+                        <CommandItem
+                          key={c.id}
+                          value={`${c.nombre} ${c.telefono} ${c.direccion}`}
+                          onSelect={() => {
+                            setClienteId(c.id)
+                            setClienteOpen(false)
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "size-4",
+                              c.id === clienteId ? "opacity-100" : "opacity-0",
+                            )}
+                          />
+                          <div className="flex min-w-0 flex-col">
+                            <span className="truncate font-medium">{c.nombre}</span>
+                            <span className="truncate text-xs text-muted-foreground">
+                              {[c.telefono, c.direccion].filter(Boolean).join(" · ") || "Sin datos de contacto"}
+                            </span>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
@@ -363,7 +447,11 @@ export function RegistrarMovimiento({
                           </SelectTrigger>
                           <SelectContent>
                             {productosActivos.map((item) => (
-                              <SelectItem key={item.id} value={item.id}>
+                              <SelectItem
+                                key={item.id}
+                                value={item.id}
+                                disabled={item.stockActual <= 0 && item.id !== linea.productoId}
+                              >
                                 {item.nombre} · stock {item.stockActual}
                               </SelectItem>
                             ))}
@@ -597,9 +685,15 @@ export function RegistrarMovimiento({
         )}
 
         {okMsg && (
-          <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <div className="flex items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
             <CheckCircle2 className="size-4" />
             {okMsg}
+          </div>
+        )}
+
+        {mensajeValidacion && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {mensajeValidacion}
           </div>
         )}
 
@@ -607,7 +701,7 @@ export function RegistrarMovimiento({
           size="lg"
           className="h-12 w-full text-base"
           onClick={handleSubmit}
-          disabled={!clienteId || (tipo === "entrega" && lineas.length === 0)}
+          disabled={!puedeRegistrar}
         >
           Registrar movimiento
         </Button>

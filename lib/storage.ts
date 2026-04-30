@@ -22,6 +22,8 @@ type ClientRow = {
   balance: number | string | null
   containers_12_on_loan: number | null
   containers_20_on_loan: number | null
+  dispenser_cold_on_loan: number | null
+  dispenser_hot_on_loan: number | null
   is_active: boolean | null
   created_at: string | null
 }
@@ -81,6 +83,8 @@ function mapClient(row: ClientRow): Cliente {
     envasesComodato: (row.containers_12_on_loan ?? 0) + (row.containers_20_on_loan ?? 0),
     envasesComodato12: row.containers_12_on_loan ?? 0,
     envasesComodato20: row.containers_20_on_loan ?? 0,
+    dispenserFrioComodato: row.dispenser_cold_on_loan ?? 0,
+    dispenserCalorComodato: row.dispenser_hot_on_loan ?? 0,
     createdAt,
     updatedAt: createdAt,
   }
@@ -347,7 +351,15 @@ export function useDB() {
   const agregarCliente = useCallback(
     (
       data: Pick<Cliente, "nombre" | "telefono" | "direccion" | "observaciones"> &
-        Partial<Pick<Cliente, "envasesComodato12" | "envasesComodato20">>,
+        Partial<
+          Pick<
+            Cliente,
+            | "envasesComodato12"
+            | "envasesComodato20"
+            | "dispenserFrioComodato"
+            | "dispenserCalorComodato"
+          >
+        >,
     ) => {
       void runMutation(async () => {
         const { error: insertError } = await supabase.from("clients").insert({
@@ -357,6 +369,8 @@ export function useDB() {
           notes: data.observaciones.trim(),
           containers_12_on_loan: Number(data.envasesComodato12) || 0,
           containers_20_on_loan: Number(data.envasesComodato20) || 0,
+          dispenser_cold_on_loan: Number(data.dispenserFrioComodato) || 0,
+          dispenser_hot_on_loan: Number(data.dispenserCalorComodato) || 0,
         })
         if (insertError) throw insertError
       })
@@ -377,6 +391,8 @@ export function useDB() {
           | "activo"
           | "envasesComodato12"
           | "envasesComodato20"
+          | "dispenserFrioComodato"
+          | "dispenserCalorComodato"
         >
       >,
     ) => {
@@ -392,6 +408,12 @@ export function useDB() {
         }
         if (data.envasesComodato20 !== undefined) {
           patch.containers_20_on_loan = Number(data.envasesComodato20) || 0
+        }
+        if (data.dispenserFrioComodato !== undefined) {
+          patch.dispenser_cold_on_loan = Number(data.dispenserFrioComodato) || 0
+        }
+        if (data.dispenserCalorComodato !== undefined) {
+          patch.dispenser_hot_on_loan = Number(data.dispenserCalorComodato) || 0
         }
 
         const { error: updateError } = await supabase.from("clients").update(patch).eq("id", id)

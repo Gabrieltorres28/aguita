@@ -49,7 +49,14 @@ type Props = {
   onAgregar: (
     data: Pick<
       Cliente,
-      "nombre" | "telefono" | "direccion" | "observaciones" | "envasesComodato12" | "envasesComodato20"
+      | "nombre"
+      | "telefono"
+      | "direccion"
+      | "observaciones"
+      | "envasesComodato12"
+      | "envasesComodato20"
+      | "dispenserFrioComodato"
+      | "dispenserCalorComodato"
     >,
   ) => void
   onEditar: (
@@ -64,6 +71,8 @@ type Props = {
         | "activo"
         | "envasesComodato12"
         | "envasesComodato20"
+        | "dispenserFrioComodato"
+        | "dispenserCalorComodato"
       >
     >,
   ) => void
@@ -91,6 +100,8 @@ export function ClientesView({
     observaciones: "",
     envasesComodato12: 0,
     envasesComodato20: 0,
+    dispenserFrioComodato: 0,
+    dispenserCalorComodato: 0,
   })
 
   const abrirNuevo = () => {
@@ -102,6 +113,8 @@ export function ClientesView({
       observaciones: "",
       envasesComodato12: 0,
       envasesComodato20: 0,
+      dispenserFrioComodato: 0,
+      dispenserCalorComodato: 0,
     })
     setDialogOpen(true)
   }
@@ -115,6 +128,8 @@ export function ClientesView({
       observaciones: c.observaciones,
       envasesComodato12: c.envasesComodato12,
       envasesComodato20: c.envasesComodato20,
+      dispenserFrioComodato: c.dispenserFrioComodato,
+      dispenserCalorComodato: c.dispenserCalorComodato,
     })
     setDialogOpen(true)
   }
@@ -195,6 +210,7 @@ export function ClientesView({
                   <TableHead>Cliente</TableHead>
                   <TableHead>WhatsApp</TableHead>
                   <TableHead>Dirección</TableHead>
+                  <TableHead>Comodato</TableHead>
                   <TableHead className="text-right">Deuda</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead className="w-48 text-right">Acciones</TableHead>
@@ -213,6 +229,14 @@ export function ClientesView({
                     </TableCell>
                     <TableCell>{c.telefono || "-"}</TableCell>
                     <TableCell>{c.direccion || "-"}</TableCell>
+                    <TableCell>
+                      <div className="text-sm">
+                        {c.envasesComodato} envase(s)
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Disp. frío: {c.dispenserFrioComodato} · calor: {c.dispenserCalorComodato}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right font-semibold">
                       {formatARS(c.saldo < 0 ? -c.saldo : 0)}
                     </TableCell>
@@ -340,6 +364,9 @@ export function ClientesView({
                     <p className="text-[11px] text-muted-foreground">
                       12L: {c.envasesComodato12} · 20L: {c.envasesComodato20}
                     </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Disp. frío: {c.dispenserFrioComodato} · calor: {c.dispenserCalorComodato}
+                    </p>
                   </div>
                 </div>
                 <Button
@@ -446,6 +473,34 @@ export function ClientesView({
                 value={form.envasesComodato20}
                 onChange={(e) =>
                   setForm({ ...form, envasesComodato20: Number(e.target.value) || 0 })
+                }
+                className="h-11"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="dispenser-frio-comodato">Dispensers frío en comodato</Label>
+              <Input
+                id="dispenser-frio-comodato"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={form.dispenserFrioComodato}
+                onChange={(e) =>
+                  setForm({ ...form, dispenserFrioComodato: Number(e.target.value) || 0 })
+                }
+                className="h-11"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="dispenser-calor-comodato">Dispensers calor en comodato</Label>
+              <Input
+                id="dispenser-calor-comodato"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={form.dispenserCalorComodato}
+                onChange={(e) =>
+                  setForm({ ...form, dispenserCalorComodato: Number(e.target.value) || 0 })
                 }
                 className="h-11"
               />

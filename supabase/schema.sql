@@ -9,6 +9,8 @@ create table if not exists public.clients (
   balance numeric default 0,
   containers_12_on_loan integer default 0,
   containers_20_on_loan integer default 0,
+  dispenser_cold_on_loan integer default 0,
+  dispenser_hot_on_loan integer default 0,
   is_active boolean default true,
   created_at timestamp with time zone default now()
 );
