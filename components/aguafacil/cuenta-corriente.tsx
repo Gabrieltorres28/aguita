@@ -23,6 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import type { Cliente, Movimiento } from "@/lib/types"
+import { obtenerVentasConSaldoPendiente } from "@/lib/deuda"
 import { formatARS, formatFechaHora } from "@/lib/storage"
 import { Label } from "@/components/ui/label"
 import { crearMensajeDeuda, crearUrlWhatsApp } from "@/lib/whatsapp"
@@ -78,8 +79,14 @@ export function CuentaCorriente({
     [movimientos, clienteSeleccionadoId],
   )
 
-  const ventas = movs.filter((m) => m.tipo === "entrega")
   const cobros = movs.filter((m) => m.tipo === "pago" || m.pagoRecibido > 0)
+  const ventasPendientes = useMemo(
+    () =>
+      cliente
+        ? obtenerVentasConSaldoPendiente(cliente.id, movimientos)
+        : [],
+    [cliente, movimientos],
+  )
   const deudaActual = cliente && cliente.saldo < 0 ? -cliente.saldo : 0
   const clientesFiltrados = useMemo(() => {
     const q = busquedaCliente.toLowerCase().trim()
@@ -268,23 +275,23 @@ export function CuentaCorriente({
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">Historial de ventas ({ventas.length})</CardTitle>
+            <CardTitle className="text-base">Detalle de deuda ({ventasPendientes.length})</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 p-4 pt-0">
-            {ventas.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sin ventas registradas.</p>
+            {ventasPendientes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin ventas pendientes.</p>
             ) : (
-              ventas.slice(0, 8).map((m) => (
+              ventasPendientes.slice(0, 8).map(({ movimiento: m, saldoPendiente }) => (
                 <div key={m.id} className="rounded-md border border-border p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium">{formatARS(m.total)}</p>
+                      <p className="text-sm font-medium">{formatARS(saldoPendiente)}</p>
                       <p className="text-xs text-muted-foreground">
                         {formatFechaHora(m.fechaVenta ?? m.fecha)}
                       </p>
                     </div>
-                    <span className="text-sm font-semibold text-emerald-700">
-                      Pago {formatARS(m.pagoRecibido)}
+                    <span className="text-sm font-semibold text-destructive">
+                      Pendiente
                     </span>
                   </div>
                   {m.productos?.length > 0 && (

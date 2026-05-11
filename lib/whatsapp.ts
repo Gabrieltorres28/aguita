@@ -1,4 +1,5 @@
 import type { Cliente, Movimiento } from "./types"
+import { obtenerVentasConSaldoPendiente } from "./deuda"
 import { formatARS, formatFecha } from "./storage"
 
 export function prepararTelefonoWhatsApp(telefono: string) {
@@ -11,22 +12,19 @@ export function prepararTelefonoWhatsApp(telefono: string) {
 
 export function crearMensajeDeuda(cliente: Cliente, movimientos: Movimiento[]) {
   const deuda = cliente.saldo < 0 ? -cliente.saldo : 0
-  const ventasPendientes = movimientos
-    .filter((mov) => mov.clienteId === cliente.id && mov.tipo === "entrega")
-    .filter((mov) => mov.saldoResultante < 0)
-    .slice(0, 12)
+  const ventasPendientes = obtenerVentasConSaldoPendiente(cliente.id, movimientos).slice(0, 12)
 
   const detalleProductos =
     ventasPendientes.length > 0
       ? ventasPendientes
-          .map((mov) => {
+          .map(({ movimiento: mov, saldoPendiente }) => {
             const productos =
               mov.productos?.length > 0
                 ? mov.productos
                     .map((item) => `${item.cantidad} ${item.nombre}`)
                     .join(", ")
                 : `${mov.bidonesEntregados} unidad(es)`
-            return `- ${formatFecha(mov.fechaVenta ?? mov.fecha)}: ${productos} (${formatARS(mov.total)})`
+            return `- ${formatFecha(mov.fechaVenta ?? mov.fecha)}: ${productos} (pendiente ${formatARS(saldoPendiente)})`
           })
           .join("\n")
       : "- Sin ventas pendientes detalladas."
